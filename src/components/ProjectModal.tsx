@@ -36,6 +36,9 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
 
   if (!isOpen) return null;
 
+  // Filter out inactive clients
+  const activeClients = clients.filter(client => client.is_active);
+
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
@@ -58,12 +61,17 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
                 className="form-input mt-1"
               >
                 <option value="">Select a client</option>
-                {clients.map(client => (
+                {activeClients.map(client => (
                   <option key={client.id} value={client.id}>
                     {client.legal_name}
                   </option>
                 ))}
               </select>
+              {clients.length > activeClients.length && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Note: Inactive clients are not shown in the list as new projects cannot be created for them.
+                </p>
+              )}
             </div>
 
             <div>

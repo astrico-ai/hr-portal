@@ -199,13 +199,15 @@ const ClientDetails = () => {
           </h1>
         </div>
         <div className="mt-4 md:mt-0">
-          <Link
-            to={`/clients/${client.id}/edit`}
-            className="btn btn-secondary"
+          <button
+            onClick={() => client.is_active ? navigate(`/clients/${client.id}/edit`) : null}
+            className={`btn btn-secondary ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!client.is_active}
+            title={client.is_active ? 'Edit Client' : 'Cannot edit inactive client'}
           >
             <Pencil className="h-4 w-4" />
             Edit Client
-          </Link>
+          </button>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import type { Project, BillableItem, BillableItemFormData } from '../types';
+import type { Project, BillableItem, BillableItemFormData, Client } from '../types';
 import { 
   getDocument, 
   getDocuments, 
@@ -10,7 +10,8 @@ import {
 
 const COLLECTIONS = {
   PROJECTS: 'projects',
-  BILLABLE_ITEMS: 'billableItems'
+  BILLABLE_ITEMS: 'billableItems',
+  CLIENTS: 'clients'
 } as const;
 
 // Helper to convert File to base64
@@ -21,6 +22,17 @@ function fileToBase64(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = error => reject(error);
   });
+}
+
+// Client operations
+export async function getClients(): Promise<Client[]> {
+  try {
+    const clients = await getDocuments(COLLECTIONS.CLIENTS);
+    return (Array.isArray(clients) ? clients : []) as unknown as Client[];
+  } catch (error) {
+    console.error('Error getting clients:', error);
+    return [];
+  }
 }
 
 // Project operations

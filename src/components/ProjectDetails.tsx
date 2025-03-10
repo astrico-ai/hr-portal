@@ -9,9 +9,10 @@ import { handleDocumentClick } from '../utils/documentUtils';
 interface ProjectInfoProps {
   project: Project;
   onSave: (updatedProject: Project) => Promise<void>;
+  client: Client | null;
 }
 
-const ProjectInfo: React.FC<ProjectInfoProps> = ({ project, onSave }) => {
+const ProjectInfo: React.FC<ProjectInfoProps> = ({ project, onSave, client }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState(project);
 
@@ -45,46 +46,44 @@ const ProjectInfo: React.FC<ProjectInfoProps> = ({ project, onSave }) => {
             </button>
           </div>
         </div>
-        <dl className="mt-4 space-y-4">
+        <form className="mt-4 space-y-4">
           <div>
-            <dt className="text-sm font-medium text-gray-500">Project Name</dt>
-            <dd className="mt-1">
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="form-input"
-                required
-              />
-            </dd>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+              Project Name
+            </label>
+            <input
+              type="text"
+              id="name"
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              className="form-input mt-1"
+            />
           </div>
           <div>
-            <dt className="text-sm font-medium text-gray-500">SPOC Name</dt>
-            <dd className="mt-1">
-              <input
-                type="text"
-                value={formData.spoc_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, spoc_name: e.target.value }))}
-                className="form-input"
-                required
-              />
-            </dd>
+            <label htmlFor="spoc_name" className="block text-sm font-medium text-gray-700">
+              SPOC Name
+            </label>
+            <input
+              type="text"
+              id="spoc_name"
+              value={formData.spoc_name}
+              onChange={(e) => setFormData(prev => ({ ...prev, spoc_name: e.target.value }))}
+              className="form-input mt-1"
+            />
           </div>
           <div>
-            <dt className="text-sm font-medium text-gray-500">SPOC Mobile</dt>
-            <dd className="mt-1">
-              <input
-                type="tel"
-                value={formData.spoc_mobile}
-                onChange={(e) => setFormData(prev => ({ ...prev, spoc_mobile: e.target.value }))}
-                className="form-input"
-                pattern="[0-9]{10}"
-                title="Please enter a valid 10-digit mobile number"
-                required
-              />
-            </dd>
+            <label htmlFor="spoc_mobile" className="block text-sm font-medium text-gray-700">
+              SPOC Mobile
+            </label>
+            <input
+              type="text"
+              id="spoc_mobile"
+              value={formData.spoc_mobile}
+              onChange={(e) => setFormData(prev => ({ ...prev, spoc_mobile: e.target.value }))}
+              className="form-input mt-1"
+            />
           </div>
-        </dl>
+        </form>
       </div>
     );
   }
@@ -95,7 +94,9 @@ const ProjectInfo: React.FC<ProjectInfoProps> = ({ project, onSave }) => {
         <h3 className="text-lg font-medium text-gray-900">Project Information</h3>
         <button
           onClick={() => setIsEditing(true)}
-          className="btn btn-secondary btn-sm"
+          className={`btn btn-secondary btn-sm ${!client?.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={!client?.is_active}
+          title={client?.is_active ? 'Edit Project Info' : 'Cannot edit project of inactive client'}
         >
           <Pencil className="h-4 w-4" />
           Edit
@@ -611,10 +612,16 @@ const ProjectDetails: React.FC = () => {
                   <dd className="text-sm text-gray-900">{client.gst_number}</dd>
                 </div>
               )}
+              <div>
+                <dt className="text-sm font-medium text-gray-500">Status</dt>
+                <dd className={`text-sm ${client.is_active ? 'text-green-600' : 'text-red-600'}`}>
+                  {client.is_active ? 'Active' : 'Inactive'}
+                </dd>
+              </div>
             </dl>
           </div>
           <div>
-            <ProjectInfo project={project} onSave={handleProjectSave} />
+            <ProjectInfo project={project} onSave={handleProjectSave} client={client} />
           </div>
         </div>
       </div>
@@ -627,7 +634,9 @@ const ProjectDetails: React.FC = () => {
           <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
             <button
               onClick={() => navigate(`/invoices/project/${project.id}/items/new`)}
-              className="btn btn-primary"
+              className={`btn btn-primary ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!client.is_active}
+              title={client.is_active ? 'Add Item' : 'Cannot add items to inactive client projects'}
             >
               <Plus className="h-4 w-4" />
               Add Item
@@ -750,9 +759,10 @@ const ProjectDetails: React.FC = () => {
                               </a>
                             )}
                             <button
-                              onClick={() => setEditingItem(item)}
-                              className="text-gray-600 hover:text-gray-900"
-                              title="Edit Item"
+                              onClick={() => client.is_active ? setEditingItem(item) : null}
+                              className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              disabled={!client.is_active}
+                              title={client.is_active ? 'Edit Item' : 'Cannot edit items of inactive client'}
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -841,9 +851,10 @@ const ProjectDetails: React.FC = () => {
                               </a>
                             )}
                             <button
-                              onClick={() => setEditingItem(item)}
-                              className="text-gray-600 hover:text-gray-900"
-                              title="Edit Item"
+                              onClick={() => client.is_active ? setEditingItem(item) : null}
+                              className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              disabled={!client.is_active}
+                              title={client.is_active ? 'Edit Item' : 'Cannot edit items of inactive client'}
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -868,7 +879,9 @@ const ProjectDetails: React.FC = () => {
               <div className="mt-4">
                 <button
                   onClick={() => navigate(`/invoices/project/${project.id}/items/new`)}
-                  className="btn btn-primary"
+                  className={`btn btn-primary ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={!client.is_active}
+                  title={client.is_active ? 'Add Item' : 'Cannot add items to inactive client projects'}
                 >
                   <Plus className="h-4 w-4" />
                   Add your first item

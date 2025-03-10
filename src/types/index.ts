@@ -20,6 +20,7 @@ export interface Client {
   created_at: string;
   updated_at: string;
   documents?: Document[];
+  is_active: boolean;
 }
 
 export interface ClientFormData {
@@ -33,6 +34,7 @@ export interface ClientFormData {
   msa_document?: File;
   nda_document?: File;
   other_documents?: Array<{ name: string; file: File; }>;
+  is_active?: boolean;
 }
 
 export interface Project {

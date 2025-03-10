@@ -59,6 +59,7 @@ export async function createClient(clientData: ClientFormData): Promise<Client> 
   const newClient: Client = {
     id: await getNextId(),
     ...clientData,
+    is_active: true, // Set active by default
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -67,10 +68,17 @@ export async function createClient(clientData: ClientFormData): Promise<Client> 
   return newClient;
 }
 
-export async function updateClient(id: number, clientData: ClientFormData): Promise<Client> {
+export async function updateClient(id: number, clientData: Partial<Client>): Promise<Client> {
   const existingClient = await getClientById(id);
   if (!existingClient) {
     throw new Error('Client not found');
+  }
+
+  // If we're updating fields other than is_active, check if client is active
+  if (Object.keys(clientData).length > 1 || (Object.keys(clientData).length === 1 && !('is_active' in clientData))) {
+    if (!existingClient.is_active) {
+      throw new Error('Cannot update an inactive client');
+    }
   }
 
   const updatedClient: Client = {
@@ -129,6 +137,11 @@ export async function saveClient(id: number | undefined, data: ClientFormData): 
     const existingClient = await getClientById(id);
     if (!existingClient) throw new Error('Client not found');
     
+    // Don't allow updates if client is inactive
+    if (!existingClient.is_active) {
+      throw new Error('Cannot update an inactive client');
+    }
+    
     client = {
       ...existingClient,
       ...data,
@@ -140,6 +153,7 @@ export async function saveClient(id: number | undefined, data: ClientFormData): 
     client = {
       id: await getNextId(),
       ...data,
+      is_active: true, // Always set active for new clients
       created_at: timestamp,
       updated_at: timestamp,
       documents: []

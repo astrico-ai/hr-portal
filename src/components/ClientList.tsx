@@ -1,8 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
-import { getClients, deleteClient } from '../lib/clients';
+import { getClients, deleteClient, updateClient } from '../lib/clients';
 import type { Client } from '../types';
+
+interface StatusToggleProps {
+  client: Client;
+  onToggle: (e: React.MouseEvent, client: Client) => void;
+}
+
+const StatusToggle: React.FC<StatusToggleProps> = ({ client, onToggle }) => {
+  return (
+    <div className="flex items-center">
+      <button
+        onClick={(e) => onToggle(e, client)}
+        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2 ${
+          client.is_active ? 'bg-primary-600' : 'bg-gray-200'
+        }`}
+        title="Click to toggle client status"
+      >
+        <span
+          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+            client.is_active ? 'translate-x-5' : 'translate-x-0'
+          }`}
+        />
+      </button>
+      <span className="ml-2">
+        {client.is_active ? 'Active' : 'Inactive'}
+      </span>
+    </div>
+  );
+};
 
 const ClientList = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -38,10 +66,28 @@ const ClientList = () => {
     }
   }
 
-  const handleEditClick = (e: React.MouseEvent, clientId: number) => {
+  async function handleStatusToggle(e: React.MouseEvent, client: Client) {
     e.preventDefault();
     e.stopPropagation();
-    navigate(`/clients/${clientId}/edit`);
+    
+    try {
+      const updatedClient = await updateClient(client.id, {
+        is_active: !client.is_active
+      });
+      setClients(clients.map(c => c.id === client.id ? updatedClient : c));
+    } catch (error) {
+      console.error('Failed to update client status:', error);
+    }
+  }
+
+  const handleEditClick = (e: React.MouseEvent, client: Client) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!client.is_active) {
+      alert('Cannot edit an inactive client');
+      return;
+    }
+    navigate(`/clients/${client.id}/edit`);
   };
 
   const handleRowClick = (clientId: number) => {
@@ -110,6 +156,9 @@ const ClientList = () => {
                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   State
                 </th>
+                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  Status
+                </th>
                 <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -118,7 +167,7 @@ const ClientList = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-8">
+                  <td colSpan={5} className="py-8">
                     <div className="text-center">
                       <p className="text-sm text-gray-500">No clients found</p>
                       <div className="mt-4">
@@ -138,7 +187,7 @@ const ClientList = () => {
                   <tr 
                     key={client.id} 
                     onClick={() => handleRowClick(client.id)}
-                    className="group hover:bg-gray-50 cursor-pointer"
+                    className={`group hover:bg-gray-50 cursor-pointer ${!client.is_active ? 'opacity-75' : ''}`}
                   >
                     <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                       {client.legal_name}
@@ -149,12 +198,19 @@ const ClientList = () => {
                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       {client.state || '-'}
                     </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <StatusToggle 
+                        client={client} 
+                        onToggle={handleStatusToggle}
+                      />
+                    </td>
                     <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={(e) => handleEditClick(e, client.id)}
-                          className="text-primary-600 hover:text-primary-900"
-                          title="Edit"
+                          onClick={(e) => handleEditClick(e, client)}
+                          disabled={!client.is_active}
+                          className={`text-primary-600 hover:text-primary-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title={client.is_active ? 'Edit' : 'Cannot edit inactive client'}
                         >
                           <Pencil className="h-4 w-4" />
                           <span className="sr-only">Edit</span>

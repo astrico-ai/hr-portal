@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ChevronRight } from 'lucide-react';
+import { Plus, ChevronRight, Search } from 'lucide-react';
 import type { Client, Project, BillableItem } from '../types';
 import { getClients } from '../lib/clients';
 import { getProjects, getBillableItems } from '../lib/storage';
@@ -16,6 +16,8 @@ interface ProjectWithClient {
 const InvoiceList = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<ProjectWithClient[]>([]);
+  const [filteredProjects, setFilteredProjects] = useState<ProjectWithClient[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const navigate = useNavigate();
@@ -23,6 +25,22 @@ const InvoiceList = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredProjects(projects);
+      return;
+    }
+
+    const searchTermLower = searchTerm.toLowerCase();
+    const filtered = projects.filter(({ project, client }) => 
+      client.legal_name.toLowerCase().includes(searchTermLower) ||
+      project.name.toLowerCase().includes(searchTermLower) ||
+      project.spoc_name.toLowerCase().includes(searchTermLower) ||
+      project.spoc_mobile.toLowerCase().includes(searchTermLower)
+    );
+    setFilteredProjects(filtered);
+  }, [searchTerm, projects]);
 
   async function loadData() {
     try {
@@ -47,6 +65,7 @@ const InvoiceList = () => {
 
       setClients(clientsData);
       setProjects(projectsWithClients);
+      setFilteredProjects(projectsWithClients);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -82,7 +101,22 @@ const InvoiceList = () => {
         </div>
       </div>
 
-      <div className="mt-8 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg">
+      <div className="mt-8 flex items-center gap-4">
+        <div className="relative flex-1 max-w-lg">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by client, project, or SPOC..."
+            className="form-input pl-10 w-full"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg">
         <table className="min-w-full divide-y divide-gray-200">
           <thead>
             <tr>
@@ -110,25 +144,31 @@ const InvoiceList = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
-            {projects.length === 0 ? (
+            {filteredProjects.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-8">
                   <div className="text-center">
-                    <p className="text-sm text-gray-500">No projects found</p>
-                    <div className="mt-4">
-                      <button
-                        onClick={() => setIsProjectModalOpen(true)}
-                        className="btn btn-primary"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Create your first project
-                      </button>
-                    </div>
+                    <p className="text-sm text-gray-500">
+                      {searchTerm.trim() 
+                        ? 'No projects found matching your search'
+                        : 'No projects found'}
+                    </p>
+                    {!searchTerm.trim() && (
+                      <div className="mt-4">
+                        <button
+                          onClick={() => setIsProjectModalOpen(true)}
+                          className="btn btn-primary"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Create your first project
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </td>
               </tr>
             ) : (
-              projects.map(({ project, client, itemCount, totalAmount }) => (
+              filteredProjects.map(({ project, client, itemCount, totalAmount }) => (
                 <tr 
                   key={project.id} 
                   className="hover:bg-gray-50 cursor-pointer"

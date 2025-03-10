@@ -55,6 +55,13 @@ const ClientForm = () => {
         return;
       }
 
+      // Redirect if client is inactive
+      if (!client.is_active) {
+        alert('Cannot edit an inactive client');
+        navigate('/clients');
+        return;
+      }
+
       setFormData({
         legal_name: client.legal_name,
         gst_number: client.gst_number || '',
