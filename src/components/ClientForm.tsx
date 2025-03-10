@@ -1,9 +1,9 @@
-import React from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { createClient, updateClient, getClientById } from '../lib/clients';
+import type { Client, ClientFormData } from '../types';
+import { getClients, saveClient } from '../lib/clients';
 import { useAuth } from '../contexts/AuthContext';
-import type { ClientFormData } from '../types';
 
 // List of Indian states
 const INDIAN_STATES = [
@@ -22,42 +22,51 @@ const COUNTRIES = [
 ];
 
 const ClientForm = () => {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { id } = useParams();
   const { userEmail } = useAuth();
-  const [loading, setLoading] = React.useState(false);
-  const [formData, setFormData] = React.useState<ClientFormData>({
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState<ClientFormData>({
     legal_name: '',
     gst_number: '',
     billing_address: '',
     pincode: '',
-    state: 'Maharashtra', // Default state
-    country: 'India', // Default country
-    created_by_email: userEmail || '', // Set from authenticated user
+    state: '',
+    country: '',
+    created_by_email: userEmail || '',
   });
+  const [msaDocument, setMsaDocument] = useState<File | null>(null);
+  const [ndaDocument, setNdaDocument] = useState<File | null>(null);
+  const [otherDocuments, setOtherDocuments] = useState<Array<{ name: string; file: File }>>([]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (id) {
-      loadClient(parseInt(id));
+      loadClient();
     }
   }, [id]);
 
-  async function loadClient(clientId: number) {
+  async function loadClient() {
     try {
-      const client = await getClientById(clientId);
-      if (client) {
-        setFormData({
-          legal_name: client.legal_name,
-          gst_number: client.gst_number || '',
-          billing_address: client.billing_address || '',
-          pincode: client.pincode || '',
-          state: client.state || 'Maharashtra',
-          country: client.country || 'India',
-          created_by_email: client.created_by_email || userEmail || '',
-        });
+      const clients = await getClients();
+      const client = clients.find(c => c.id === parseInt(id!));
+      
+      if (!client) {
+        navigate('/clients');
+        return;
       }
+
+      setFormData({
+        legal_name: client.legal_name,
+        gst_number: client.gst_number || '',
+        billing_address: client.billing_address || '',
+        pincode: client.pincode || '',
+        state: client.state || '',
+        country: client.country || '',
+        created_by_email: client.created_by_email,
+      });
     } catch (error) {
       console.error('Failed to load client:', error);
+      navigate('/clients');
     }
   }
 
@@ -66,16 +75,13 @@ const ClientForm = () => {
     setLoading(true);
 
     try {
-      const dataToSubmit = {
+      const finalFormData = {
         ...formData,
-        created_by_email: userEmail || '', // Ensure we always use the authenticated user's email
+        msa_document: msaDocument,
+        nda_document: ndaDocument,
+        other_documents: otherDocuments,
       };
-
-      if (id) {
-        await updateClient(parseInt(id), dataToSubmit);
-      } else {
-        await createClient(dataToSubmit);
-      }
+      await saveClient(id ? parseInt(id) : undefined, finalFormData);
       navigate('/clients');
     } catch (error) {
       console.error('Failed to save client:', error);
@@ -84,9 +90,22 @@ const ClientForm = () => {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleOtherDocumentAdd = () => {
+    setOtherDocuments([...otherDocuments, { name: '', file: null as unknown as File }]);
+  };
+
+  const handleOtherDocumentChange = (index: number, field: 'name' | 'file', value: string | File) => {
+    const newDocs = [...otherDocuments];
+    if (field === 'name') {
+      newDocs[index].name = value as string;
+    } else {
+      newDocs[index].file = value as File;
+    }
+    setOtherDocuments(newDocs);
+  };
+
+  const handleOtherDocumentRemove = (index: number) => {
+    setOtherDocuments(otherDocuments.filter((_, i) => i !== index));
   };
 
   return (
@@ -101,138 +120,199 @@ const ClientForm = () => {
             Back
           </button>
           <h1 className="text-2xl font-semibold text-gray-900">
-            {id ? 'Edit Client' : 'Add New Client'}
+            {id ? 'Edit Client' : 'New Client'}
           </h1>
         </div>
       </div>
 
-      <div className="mt-8">
-        <form onSubmit={handleSubmit} className="bg-white shadow-sm ring-1 ring-gray-200 px-4 py-5 sm:rounded-lg sm:p-6">
-          <div className="space-y-8 divide-y divide-gray-200">
-            <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
-              <div className="sm:col-span-3">
-                <label htmlFor="legal_name" className="block text-sm font-medium text-gray-700">
-                  Legal Name <span className="text-red-500">*</span>
-                </label>
-                <div className="mt-1">
+      <form onSubmit={handleSubmit} className="mt-8 max-w-2xl">
+        <div className="bg-white shadow-sm ring-1 ring-gray-200 px-4 py-5 sm:rounded-lg sm:p-6">
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">Client Information</h3>
+              <div className="mt-6 grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
+                <div className="sm:col-span-4">
+                  <label htmlFor="legal_name" className="block text-sm font-medium text-gray-700">
+                    Legal Name <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     id="legal_name"
-                    name="legal_name"
                     value={formData.legal_name}
-                    onChange={handleChange}
+                    onChange={(e) => setFormData(prev => ({ ...prev, legal_name: e.target.value }))}
                     required
-                    className="form-input"
+                    className="form-input mt-1"
                   />
                 </div>
-              </div>
 
-              <div className="sm:col-span-3">
-                <label htmlFor="gst_number" className="block text-sm font-medium text-gray-700">
-                  GST Number
-                </label>
-                <div className="mt-1">
+                <div className="sm:col-span-4">
+                  <label htmlFor="gst_number" className="block text-sm font-medium text-gray-700">
+                    GST Number
+                  </label>
                   <input
                     type="text"
                     id="gst_number"
-                    name="gst_number"
                     value={formData.gst_number}
-                    onChange={handleChange}
-                    className="form-input"
+                    onChange={(e) => setFormData(prev => ({ ...prev, gst_number: e.target.value }))}
+                    className="form-input mt-1"
                   />
                 </div>
-              </div>
 
-              <div className="sm:col-span-6">
-                <label htmlFor="billing_address" className="block text-sm font-medium text-gray-700">
-                  Billing Address
-                </label>
-                <div className="mt-1">
+                <div className="sm:col-span-6">
+                  <label htmlFor="billing_address" className="block text-sm font-medium text-gray-700">
+                    Billing Address
+                  </label>
                   <textarea
                     id="billing_address"
-                    name="billing_address"
-                    value={formData.billing_address}
-                    onChange={handleChange}
                     rows={3}
-                    className="form-input"
+                    value={formData.billing_address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, billing_address: e.target.value }))}
+                    className="form-input mt-1"
                   />
                 </div>
-              </div>
 
-              <div className="sm:col-span-2">
-                <label htmlFor="pincode" className="block text-sm font-medium text-gray-700">
-                  Pincode
-                </label>
-                <div className="mt-1">
+                <div className="sm:col-span-2">
+                  <label htmlFor="pincode" className="block text-sm font-medium text-gray-700">
+                    Pincode
+                  </label>
                   <input
                     type="text"
                     id="pincode"
-                    name="pincode"
                     value={formData.pincode}
-                    onChange={handleChange}
-                    className="form-input"
+                    onChange={(e) => setFormData(prev => ({ ...prev, pincode: e.target.value }))}
+                    className="form-input mt-1"
                   />
                 </div>
-              </div>
 
-              <div className="sm:col-span-2">
-                <label htmlFor="state" className="block text-sm font-medium text-gray-700">
-                  State
-                </label>
-                <div className="mt-1">
+                <div className="sm:col-span-2">
+                  <label htmlFor="state" className="block text-sm font-medium text-gray-700">
+                    State
+                  </label>
                   <select
                     id="state"
-                    name="state"
                     value={formData.state}
-                    onChange={handleChange}
-                    className="form-input"
+                    onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                    className="form-input mt-1"
                   >
+                    <option value="">Select a state</option>
                     {INDIAN_STATES.map(state => (
                       <option key={state} value={state}>{state}</option>
                     ))}
                   </select>
                 </div>
-              </div>
 
-              <div className="sm:col-span-2">
-                <label htmlFor="country" className="block text-sm font-medium text-gray-700">
-                  Country
-                </label>
-                <div className="mt-1">
-                  <select
+                <div className="sm:col-span-2">
+                  <label htmlFor="country" className="block text-sm font-medium text-gray-700">
+                    Country
+                  </label>
+                  <input
+                    type="text"
                     id="country"
-                    name="country"
                     value={formData.country}
-                    onChange={handleChange}
-                    className="form-input"
-                  >
-                    {COUNTRIES.map(country => (
-                      <option key={country} value={country}>{country}</option>
-                    ))}
-                  </select>
+                    onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
+                    className="form-input mt-1"
+                  />
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="mt-6 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/clients')}
-              className="btn btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary"
-            >
-              {loading ? 'Saving...' : id ? 'Update Client' : 'Create Client'}
-            </button>
+            {!id && (
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">Documents</h3>
+                <div className="mt-6 space-y-6">
+                  <div>
+                    <label htmlFor="msa_document" className="block text-sm font-medium text-gray-700">
+                      MSA Document
+                    </label>
+                    <input
+                      type="file"
+                      id="msa_document"
+                      onChange={(e) => setMsaDocument(e.target.files?.[0] || null)}
+                      className="form-input mt-1"
+                      accept=".pdf,.doc,.docx"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="nda_document" className="block text-sm font-medium text-gray-700">
+                      NDA Document
+                    </label>
+                    <input
+                      type="file"
+                      id="nda_document"
+                      onChange={(e) => setNdaDocument(e.target.files?.[0] || null)}
+                      className="form-input mt-1"
+                      accept=".pdf,.doc,.docx"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Other Documents
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleOtherDocumentAdd}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        Add Document
+                      </button>
+                    </div>
+                    <div className="mt-2 space-y-4">
+                      {otherDocuments.map((doc, index) => (
+                        <div key={index} className="flex items-start gap-4">
+                          <div className="flex-1">
+                            <input
+                              type="text"
+                              placeholder="Document Name"
+                              value={doc.name}
+                              onChange={(e) => handleOtherDocumentChange(index, 'name', e.target.value)}
+                              className="form-input mb-2"
+                              required
+                            />
+                            <input
+                              type="file"
+                              onChange={(e) => handleOtherDocumentChange(index, 'file', e.target.files?.[0] || null)}
+                              className="form-input"
+                              accept=".pdf,.doc,.docx"
+                              required
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOtherDocumentRemove(index)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </form>
-      </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/clients')}
+            className="btn btn-secondary"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn btn-primary"
+          >
+            {loading ? 'Saving...' : id ? 'Update Client' : 'Create Client'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 };

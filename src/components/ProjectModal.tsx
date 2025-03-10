@@ -13,6 +13,8 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
   const [formData, setFormData] = React.useState<ProjectFormData>({
     client_id: 0,
     name: '',
+    spoc_name: '',
+    spoc_mobile: '',
   });
   const [loading, setLoading] = React.useState(false);
 
@@ -24,7 +26,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
       await saveProject(formData);
       onSuccess();
       onClose();
-      setFormData({ client_id: 0, name: '' });
+      setFormData({ client_id: 0, name: '', spoc_name: '', spoc_mobile: '' });
     } catch (error) {
       console.error('Failed to create project:', error);
     } finally {
@@ -75,6 +77,38 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 required
+                className="form-input mt-1"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="spoc_name" className="block text-sm font-medium text-gray-700">
+                Client SPOC Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="spoc_name"
+                name="spoc_name"
+                value={formData.spoc_name}
+                onChange={(e) => setFormData(prev => ({ ...prev, spoc_name: e.target.value }))}
+                required
+                className="form-input mt-1"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="spoc_mobile" className="block text-sm font-medium text-gray-700">
+                SPOC Mobile Number <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                id="spoc_mobile"
+                name="spoc_mobile"
+                value={formData.spoc_mobile}
+                onChange={(e) => setFormData(prev => ({ ...prev, spoc_mobile: e.target.value }))}
+                required
+                pattern="[0-9]{10}"
+                title="Please enter a valid 10-digit mobile number"
                 className="form-input mt-1"
               />
             </div>

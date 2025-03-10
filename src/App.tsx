@@ -3,8 +3,10 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } f
 import { FileText, Users, FileInput as FileInvoice, LogOut } from 'lucide-react';
 import ClientList from './components/ClientList';
 import ClientForm from './components/ClientForm';
+import ClientDetails from './components/ClientDetails';
 import Dashboard from './components/Dashboard';
 import InvoiceList from './components/InvoiceList';
+import ProjectDetails from './components/ProjectDetails';
 import BillableItemFormWrapper from './components/BillableItemFormWrapper';
 import Login from './components/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -45,13 +47,6 @@ function Navigation() {
               >
                 <Users className="h-4 w-4 mr-2" />
                 Clients
-              </Link>
-              <Link
-                to="/documents"
-                className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700"
-              >
-                <FileText className="h-4 w-4 mr-2" />
-                Documents
               </Link>
               <Link
                 to="/invoices"
@@ -95,11 +90,12 @@ function App() {
                       <Routes>
                         <Route path="/clients" element={<ClientList />} />
                         <Route path="/clients/new" element={<ClientForm />} />
+                        <Route path="/clients/:id" element={<ClientDetails />} />
                         <Route path="/clients/:id/edit" element={<ClientForm />} />
                         <Route path="/invoices" element={<InvoiceList />} />
+                        <Route path="/invoices/project/:projectId" element={<ProjectDetails />} />
                         <Route path="/invoices/project/:projectId/items/new" element={<BillableItemFormWrapper />} />
                         <Route path="/" element={<Dashboard />} />
-                        <Route path="/documents" element={<Placeholder title="Documents" />} />
                       </Routes>
                     </main>
                   </>

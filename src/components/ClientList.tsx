@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { getClients, deleteClient } from '../lib/clients';
 import type { Client } from '../types';
@@ -8,6 +8,7 @@ const ClientList = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadClients();
@@ -24,7 +25,9 @@ const ClientList = () => {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(e: React.MouseEvent, id: number) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!window.confirm('Are you sure you want to delete this client?')) return;
     
     try {
@@ -34,6 +37,16 @@ const ClientList = () => {
       console.error('Failed to delete client:', error);
     }
   }
+
+  const handleEditClick = (e: React.MouseEvent, clientId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate(`/clients/${clientId}/edit`);
+  };
+
+  const handleRowClick = (clientId: number) => {
+    navigate(`/clients/${clientId}`);
+  };
 
   const filteredClients = clients.filter(client => 
     client.legal_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -94,6 +107,9 @@ const ClientList = () => {
                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   GST Number
                 </th>
+                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  State
+                </th>
                 <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -102,7 +118,7 @@ const ClientList = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="py-8">
+                  <td colSpan={4} className="py-8">
                     <div className="text-center">
                       <p className="text-sm text-gray-500">No clients found</p>
                       <div className="mt-4">
@@ -119,25 +135,32 @@ const ClientList = () => {
                 </tr>
               ) : (
                 filteredClients.map(client => (
-                  <tr key={client.id} className="hover:bg-gray-50">
+                  <tr 
+                    key={client.id} 
+                    onClick={() => handleRowClick(client.id)}
+                    className="group hover:bg-gray-50 cursor-pointer"
+                  >
                     <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                       {client.legal_name}
                     </td>
                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       {client.gst_number || '-'}
                     </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      {client.state || '-'}
+                    </td>
                     <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                       <div className="flex justify-end gap-2">
-                        <Link
-                          to={`/clients/${client.id}/edit`}
+                        <button
+                          onClick={(e) => handleEditClick(e, client.id)}
                           className="text-primary-600 hover:text-primary-900"
                           title="Edit"
                         >
                           <Pencil className="h-4 w-4" />
                           <span className="sr-only">Edit</span>
-                        </Link>
+                        </button>
                         <button
-                          onClick={() => handleDelete(client.id)}
+                          onClick={(e) => handleDelete(e, client.id)}
                           className="text-red-600 hover:text-red-900"
                           title="Delete"
                         >
