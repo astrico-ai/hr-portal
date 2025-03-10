@@ -16,6 +16,7 @@ const BillableItemForm = () => {
     name: '',
     type: 'LICENSE',
     po_number: '',
+    po_end_date: '',
     start_date: '',
     end_date: '',
     amount: 0,
@@ -113,6 +114,19 @@ const BillableItemForm = () => {
             </div>
 
             <div>
+              <label htmlFor="po_end_date" className="block text-sm font-medium text-gray-700">
+                PO End Date
+              </label>
+              <input
+                type="date"
+                id="po_end_date"
+                value={formData.po_end_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, po_end_date: e.target.value }))}
+                className="form-input mt-1"
+              />
+            </div>
+
+            <div>
               <label htmlFor="po_document" className="block text-sm font-medium text-gray-700">
                 PO Document
               </label>
@@ -187,25 +201,6 @@ const BillableItemForm = () => {
                   className="form-input pl-7"
                 />
               </div>
-            </div>
-
-            <div>
-              <label htmlFor="status" className="block text-sm font-medium text-gray-700">
-                Status <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="status"
-                value={formData.status}
-                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as BillableStatus }))}
-                required
-                className="form-input mt-1"
-              >
-                {BILLABLE_STATUSES.map(status => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         </div>

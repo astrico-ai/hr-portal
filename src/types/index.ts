@@ -5,6 +5,7 @@ export interface Document {
   name?: string;  // Only required for type OTHER
   file_url: string;
   uploaded_at: string;
+  viewDocument?: () => void;
 }
 
 export interface Client {
@@ -58,13 +59,16 @@ export interface BillableItem {
   project_id: number;
   name: string;
   type: BillableType;
-  po_number?: string;
-  po_end_date?: string;
-  po_document_url?: string;
-  proposal_document_url?: string;
+  po_number: string | null;
+  po_end_date: string | null;
+  po_document_url: string | null;
+  proposal_document_url: string | null;
+  invoice_number: string | null;
+  invoice_document_url: string | null;
   start_date: string;
   end_date: string;
   amount: number;
+  invoice_date: string | null;
   status: BillableStatus;
 }
 
@@ -72,12 +76,15 @@ export interface BillableItemFormData {
   project_id: number;
   name: string;
   type: BillableType;
-  po_number?: string;
-  po_document?: File;
-  proposal_document?: File;
+  po_number: string | null;
+  po_end_date: string | null;
+  po_document: File | null;
+  proposal_document: File | null;
+  invoice_number: string | null;
+  invoice_document: File | null;
   start_date: string;
   end_date: string;
   amount: number;
-  invoice_date?: string;
+  invoice_date: string | null;
   status: BillableStatus;
 }

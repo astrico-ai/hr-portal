@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Plus, FileText, Pencil, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Plus, FileText, Pencil, Trash2, Upload, Download } from 'lucide-react';
 import type { Client, Document } from '../types';
 import { getClients, saveDocument, deleteDocument } from '../lib/clients';
+import { handleDocumentClick } from '../utils/documentUtils';
 
 interface DocumentUploadModalProps {
   isOpen: boolean;
@@ -254,61 +255,82 @@ const ClientDetails = () => {
               <h3 className="text-lg font-medium text-gray-900">Documents</h3>
               <button
                 onClick={() => setIsUploadModalOpen(true)}
-                className="btn btn-secondary"
+                className="btn btn-primary"
               >
                 <Upload className="h-4 w-4" />
                 Upload Document
               </button>
             </div>
             <div className="mt-4">
-              {client.documents && client.documents.length > 0 ? (
-                <ul className="divide-y divide-gray-200">
-                  {client.documents.map(doc => (
-                    <li key={doc.id} className="py-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {doc.type === 'OTHER' ? doc.name : doc.type}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Uploaded on {new Date(doc.uploaded_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={doc.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary-600 hover:text-primary-900"
-                            title="View Document"
-                          >
-                            <FileText className="h-4 w-4" />
-                          </a>
-                          <button
-                            onClick={() => handleDocumentDelete(doc.id)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete Document"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-500">No documents uploaded yet.</p>
-              )}
+              <div className="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead>
+                      <tr>
+                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                          Name
+                        </th>
+                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                          Uploaded At
+                        </th>
+                        <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {client.documents && client.documents.length > 0 ? (
+                        client.documents.map(doc => (
+                          <tr key={doc.id} className="hover:bg-gray-50">
+                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
+                              {doc.type === 'OTHER' ? doc.name : doc.type}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                              {new Date(doc.uploaded_at).toLocaleDateString()}
+                            </td>
+                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={() => handleDocumentClick(doc.file_url)}
+                                  className="text-primary-600 hover:text-primary-900"
+                                  title="Download"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDocumentDelete(doc.id)}
+                                  className="text-red-600 hover:text-red-900"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={3} className="px-3 py-4 text-sm text-gray-500 text-center">
+                            No documents uploaded yet
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <DocumentUploadModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        onUpload={handleDocumentUpload}
-      />
+      {isUploadModalOpen && (
+        <DocumentUploadModal
+          isOpen={isUploadModalOpen}
+          onClose={() => setIsUploadModalOpen(false)}
+          onUpload={handleDocumentUpload}
+        />
+      )}
     </div>
   );
 };

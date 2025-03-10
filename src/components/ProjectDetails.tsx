@@ -4,6 +4,7 @@ import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download } from 'lu
 import type { Project, Client, BillableItem, BillableType, BillableStatus } from '../types';
 import { getProjects, getBillableItems, saveProject, updateBillableItem, deleteBillableItem, uploadDocument } from '../lib/storage';
 import { getClients } from '../lib/clients';
+import { handleDocumentClick } from '../utils/documentUtils';
 
 interface ProjectInfoProps {
   project: Project;
@@ -120,7 +121,7 @@ const ProjectInfo: React.FC<ProjectInfoProps> = ({ project, onSave }) => {
 
 interface EditItemModalProps {
   item: BillableItem;
-  onSave: (updatedItem: BillableItem, poDocument?: File, proposalDocument?: File) => Promise<void>;
+  onSave: (updatedItem: BillableItem, poDocument?: File, proposalDocument?: File, invoiceDocument?: File) => Promise<void>;
   onClose: () => void;
 }
 
@@ -128,6 +129,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({ item, onSave, onClose }) 
   const [formData, setFormData] = useState(item);
   const [poDocument, setPoDocument] = useState<File | null>(null);
   const [proposalDocument, setProposalDocument] = useState<File | null>(null);
+  const [invoiceDocument, setInvoiceDocument] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const formatType = (type: BillableType) => {
@@ -147,7 +149,14 @@ const EditItemModal: React.FC<EditItemModalProps> = ({ item, onSave, onClose }) 
     e.preventDefault();
     setLoading(true);
     try {
-      await onSave(formData, poDocument || undefined, proposalDocument || undefined);
+      // Validate invoice date for RAISED or RECEIVED status
+      if ((formData.status === 'RAISED' || formData.status === 'RECEIVED') && !formData.invoice_date) {
+        alert('Invoice Date is required when status is RAISED or RECEIVED');
+        setLoading(false);
+        return;
+      }
+
+      await onSave(formData, poDocument || undefined, proposalDocument || undefined, invoiceDocument || undefined);
       onClose();
     } catch (error) {
       console.error('Failed to save item:', error);
@@ -283,6 +292,34 @@ const EditItemModal: React.FC<EditItemModalProps> = ({ item, onSave, onClose }) 
           </div>
 
           <div>
+            <label htmlFor="invoice_number" className="block text-sm font-medium text-gray-700">
+              Invoice Number {(formData.status === 'RAISED' || formData.status === 'RECEIVED') && <span className="text-red-500">*</span>}
+            </label>
+            <input
+              type="text"
+              id="invoice_number"
+              value={formData.invoice_number || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, invoice_number: e.target.value }))}
+              className="form-input mt-1 w-full"
+              required={formData.status === 'RAISED' || formData.status === 'RECEIVED'}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="invoice_date" className="block text-sm font-medium text-gray-700">
+              Invoice Date {(formData.status === 'RAISED' || formData.status === 'RECEIVED') && <span className="text-red-500">*</span>}
+            </label>
+            <input
+              type="date"
+              id="invoice_date"
+              value={formData.invoice_date || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, invoice_date: e.target.value }))}
+              className="form-input mt-1 w-full"
+              required={formData.status === 'RAISED' || formData.status === 'RECEIVED'}
+            />
+          </div>
+
+          <div>
             <label htmlFor="status" className="block text-sm font-medium text-gray-700">
               Status <span className="text-red-500">*</span>
             </label>
@@ -309,9 +346,11 @@ const EditItemModal: React.FC<EditItemModalProps> = ({ item, onSave, onClose }) 
               <div className="mt-1 flex items-center gap-4">
                 {item.po_document_url && (
                   <a
-                    href={item.po_document_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleDocumentClick(item.po_document_url!);
+                    }}
                     className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900"
                   >
                     <Download className="h-4 w-4 mr-1" />
@@ -334,9 +373,11 @@ const EditItemModal: React.FC<EditItemModalProps> = ({ item, onSave, onClose }) 
               <div className="mt-1 flex items-center gap-4">
                 {item.proposal_document_url && (
                   <a
-                    href={item.proposal_document_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleDocumentClick(item.proposal_document_url!);
+                    }}
                     className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900"
                   >
                     <Download className="h-4 w-4 mr-1" />
@@ -348,6 +389,37 @@ const EditItemModal: React.FC<EditItemModalProps> = ({ item, onSave, onClose }) 
                   onChange={(e) => setProposalDocument(e.target.files?.[0] || null)}
                   accept=".pdf,.doc,.docx"
                   className="form-input"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Invoice Document {(formData.status === 'RAISED' || formData.status === 'RECEIVED') && <span className="text-red-500">*</span>}
+              </label>
+              <div className="mt-1 flex items-center gap-4">
+                {item.invoice_document_url && (
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleDocumentClick(item.invoice_document_url!);
+                    }}
+                    className="inline-flex items-center text-sm text-primary-600 hover:text-primary-900"
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Current Invoice Document
+                  </a>
+                )}
+                <input
+                  type="file"
+                  onChange={(e) => setInvoiceDocument(e.target.files?.[0] || null)}
+                  accept=".pdf,.doc,.docx"
+                  className="form-input"
+                  required={
+                    (formData.status === 'RAISED' || formData.status === 'RECEIVED') &&
+                    !item.invoice_document_url
+                  }
                 />
               </div>
             </div>
@@ -375,48 +447,63 @@ const EditItemModal: React.FC<EditItemModalProps> = ({ item, onSave, onClose }) 
   );
 };
 
-const ProjectDetails = () => {
-  const { projectId } = useParams<{ projectId: string }>();
+const ProjectDetails: React.FC = () => {
+  const { projectId: projectIdParam } = useParams();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
-  const [items, setItems] = useState<BillableItem[]>([]);
+  const [billableItems, setBillableItems] = useState<BillableItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editingItem, setEditingItem] = useState<BillableItem | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [projectId]);
-
   const loadData = async () => {
     try {
-      const projects = getProjects();
-      const project = projects.find(p => p.id === parseInt(projectId || ''));
+      const projectId = parseInt(projectIdParam || '0', 10);
+      console.log('Loading project with ID:', projectId);
+      
+      const [projects, billableItems, clients] = await Promise.all([
+        getProjects(),
+        getBillableItems(),
+        getClients()
+      ]);
+      
+      console.log('Loaded projects:', projects);
+      console.log('Loaded billable items:', billableItems);
+      console.log('Loaded clients:', clients);
+
+      const project = projects.find(p => p.id === projectId);
+      console.log('Found project:', project);
+      
       if (!project) {
+        console.error('Project not found with ID:', projectId);
         navigate('/invoices');
         return;
       }
 
-      const clients = await getClients();
-      const client = clients.find((c: Client) => c.id === project.client_id);
+      const client = clients.find(c => c.id === project.client_id);
+      console.log('Found client:', client);
+      
       if (!client) {
+        console.error('Client not found for project:', project);
         navigate('/invoices');
         return;
       }
-
-      const allItems = getBillableItems();
-      const projectItems = allItems.filter(item => item.project_id === project.id);
 
       setProject(project);
       setClient(client);
-      setItems(projectItems);
-      setLoading(false);
+      setBillableItems(billableItems.filter(item => item.project_id === projectId));
     } catch (error) {
       console.error('Error loading data:', error);
       navigate('/invoices');
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, [projectIdParam]);
 
   const handleProjectSave = async (updatedProject: Project) => {
     try {
@@ -427,11 +514,12 @@ const ProjectDetails = () => {
     }
   };
 
-  const handleItemSave = async (updatedItem: BillableItem, poDocument?: File, proposalDocument?: File) => {
+  const handleItemSave = async (updatedItem: BillableItem, poDocument?: File, proposalDocument?: File, invoiceDocument?: File) => {
     try {
       // Handle file uploads if provided
       let poDocumentUrl = updatedItem.po_document_url;
       let proposalDocumentUrl = updatedItem.proposal_document_url;
+      let invoiceDocumentUrl = updatedItem.invoice_document_url;
 
       if (poDocument) {
         poDocumentUrl = await uploadDocument(poDocument, updatedItem.id, 'po');
@@ -441,14 +529,19 @@ const ProjectDetails = () => {
         proposalDocumentUrl = await uploadDocument(proposalDocument, updatedItem.id, 'proposal');
       }
 
+      if (invoiceDocument) {
+        invoiceDocumentUrl = await uploadDocument(invoiceDocument, updatedItem.id, 'invoice');
+      }
+
       const itemToSave = {
         ...updatedItem,
         po_document_url: poDocumentUrl,
         proposal_document_url: proposalDocumentUrl,
+        invoice_document_url: invoiceDocumentUrl,
       };
 
       await updateBillableItem(itemToSave.id, itemToSave);
-      setItems(items.map(i => i.id === itemToSave.id ? itemToSave : i));
+      setBillableItems(billableItems.map(i => i.id === itemToSave.id ? itemToSave : i));
       setEditingItem(null);
     } catch (error) {
       console.error('Failed to update billable item:', error);
@@ -458,7 +551,7 @@ const ProjectDetails = () => {
   const handleItemDelete = async (itemId: number) => {
     try {
       await deleteBillableItem(itemId);
-      setItems(items.filter(i => i.id !== itemId));
+      setBillableItems(billableItems.filter(i => i.id !== itemId));
       setDeletingItemId(null);
     } catch (error) {
       console.error('Failed to delete billable item:', error);
@@ -543,7 +636,7 @@ const ProjectDetails = () => {
         </div>
 
         <div className="mt-4">
-          {items.length > 0 ? (
+          {billableItems.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead>
@@ -567,6 +660,12 @@ const ProjectDetails = () => {
                       Amount
                     </th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Invoice Number
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Invoice Date
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Status
                     </th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -575,7 +674,7 @@ const ProjectDetails = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {items.map(item => (
+                  {billableItems.map(item => (
                     editingItem === item ? (
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="px-3 py-4 text-sm text-gray-900">
@@ -591,9 +690,11 @@ const ProjectDetails = () => {
                         <td className="px-3 py-4 text-sm text-gray-500">
                           {item.po_document_url ? (
                             <a
-                              href={item.po_document_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDocumentClick(item.po_document_url!);
+                              }}
                               className="text-primary-600 hover:text-primary-900"
                             >
                               {item.po_number}
@@ -610,6 +711,25 @@ const ProjectDetails = () => {
                         </td>
                         <td className="px-3 py-4 text-sm text-gray-900 text-right">
                           ₹{item.amount.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-4 text-sm text-gray-500">
+                          {item.invoice_document_url ? (
+                            <a
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDocumentClick(item.invoice_document_url!);
+                              }}
+                              className="text-primary-600 hover:text-primary-900"
+                            >
+                              {item.invoice_number}
+                            </a>
+                          ) : (
+                            item.invoice_number || '-'
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-sm text-gray-900">
+                          {item.invoice_date ? new Date(item.invoice_date).toLocaleDateString() : '-'}
                         </td>
                         <td className="px-3 py-4">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(item.status)}`}>
@@ -661,9 +781,11 @@ const ProjectDetails = () => {
                         <td className="px-3 py-4 text-sm text-gray-500">
                           {item.po_document_url ? (
                             <a
-                              href={item.po_document_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDocumentClick(item.po_document_url!);
+                              }}
                               className="text-primary-600 hover:text-primary-900"
                             >
                               {item.po_number}
@@ -680,6 +802,25 @@ const ProjectDetails = () => {
                         </td>
                         <td className="px-3 py-4 text-sm text-gray-900 text-right">
                           ₹{item.amount.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-4 text-sm text-gray-500">
+                          {item.invoice_document_url ? (
+                            <a
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDocumentClick(item.invoice_document_url!);
+                              }}
+                              className="text-primary-600 hover:text-primary-900"
+                            >
+                              {item.invoice_number}
+                            </a>
+                          ) : (
+                            item.invoice_number || '-'
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-sm text-gray-900">
+                          {item.invoice_date ? new Date(item.invoice_date).toLocaleDateString() : '-'}
                         </td>
                         <td className="px-3 py-4">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(item.status)}`}>
