@@ -393,9 +393,9 @@ const Dashboard = () => {
                         <label htmlFor={`client-${client.id}`} className="ml-2 text-sm text-gray-700">
                           {client.legal_name || `Client ${client.id}`}
                         </label>
-                      </div>
+              </div>
                     ))}
-                  </div>
+        </div>
                 </div>
 
                 {/* Invoice Type Filter */}
@@ -467,7 +467,7 @@ const Dashboard = () => {
             {formatCurrency(calculateQuarterlyRevenue())}
           </p>
           <p className="mt-2 text-sm text-gray-500">Current Quarter</p>
-        </div>
+                </div>
 
         {/* Monthly Revenue */}
         <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6">
@@ -477,8 +477,8 @@ const Dashboard = () => {
           </p>
           <p className="mt-2 text-sm text-gray-500">
             {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
-          </p>
-        </div>
+                  </p>
+                </div>
 
         {/* Outstanding Amount */}
         <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6">
@@ -487,8 +487,8 @@ const Dashboard = () => {
             {formatCurrency(calculateOutstandingAmount())}
           </p>
           <p className="mt-2 text-sm text-gray-500">Pending Invoices</p>
-        </div>
-      </div>
+                </div>
+              </div>
 
       {/* Revenue Chart */}
       <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6">
