@@ -90,3 +90,24 @@ export interface BillableItemFormData {
   invoice_date: string | null;
   status: BillableStatus;
 }
+
+export interface PurchaseOrder {
+  id: number;
+  project_id: number;
+  name: string;
+  po_number: string;
+  amount: number;
+  document_url: string;
+  end_date: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseOrderFormData {
+  project_id: number;
+  name: string;
+  po_number: string;
+  amount: number;
+  document: File;
+  end_date: string;
+}
