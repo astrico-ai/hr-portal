@@ -53,7 +53,7 @@ export interface ProjectFormData {
   spoc_mobile: string;
 }
 
-export type BillableStatus = 'PENDING' | 'RAISED' | 'RECEIVED';
+export type BillableStatus = 'NOT_APPROVED' | 'PENDING' | 'APPROVED' | 'RAISED' | 'RECEIVED';
 export type BillableType = 'LICENSE' | 'ONE_TIME' | 'OTHERS';
 
 export interface BillableItem {
@@ -89,25 +89,4 @@ export interface BillableItemFormData {
   amount: number;
   invoice_date: string | null;
   status: BillableStatus;
-}
-
-export interface PurchaseOrder {
-  id: number;
-  project_id: number;
-  name: string;
-  po_number: string;
-  amount: number;
-  document_url: string;
-  end_date: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PurchaseOrderFormData {
-  project_id: number;
-  name: string;
-  po_number: string;
-  amount: number;
-  document: File;
-  end_date: string;
 }

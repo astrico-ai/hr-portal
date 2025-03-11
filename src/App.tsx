@@ -10,6 +10,7 @@ import ProjectDetails from './components/ProjectDetails';
 import BillableItemFormWrapper from './components/BillableItemFormWrapper';
 import Login from './components/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import ApproveInvoices from './components/ApproveInvoices';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -58,14 +59,15 @@ function Navigation() {
             </div>
           </div>
           <div className="flex items-center">
-            <span className="text-sm text-gray-500 mr-4">{userEmail}</span>
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 hover:text-gray-900"
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </button>
+            <div className="flex-shrink-0">
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 hover:text-gray-700"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -95,6 +97,7 @@ function App() {
                         <Route path="/invoices" element={<InvoiceList />} />
                         <Route path="/invoices/project/:projectId" element={<ProjectDetails />} />
                         <Route path="/invoices/project/:projectId/items/new" element={<BillableItemFormWrapper />} />
+                        <Route path="/approve-invoices" element={<ApproveInvoices />} />
                         <Route path="/" element={<Dashboard />} />
                       </Routes>
                     </main>

@@ -19,26 +19,14 @@ export const createBlobUrl = (base64Data: string) => {
   }
 };
 
-// Helper function to handle document clicks
+// Handle document click
 export const handleDocumentClick = (documentUrl: string) => {
-  try {
-    // If it's already a blob URL, open it directly
-    if (documentUrl.startsWith('blob:')) {
-      window.open(documentUrl, '_blank');
-      return;
-    }
-
-    // If it's a base64 string, convert to blob URL and open
-    const blobUrl = createBlobUrl(documentUrl);
-    if (blobUrl) {
-      window.open(blobUrl, '_blank');
-      // Clean up the blob URL after opening
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
-    } else {
-      throw new Error('Failed to create blob URL');
-    }
-  } catch (error) {
-    console.error('Error handling document click:', error);
+  const blobUrl = createBlobUrl(documentUrl);
+  if (blobUrl) {
+    window.open(blobUrl, '_blank');
+    // Clean up the blob URL after opening
+    URL.revokeObjectURL(blobUrl);
+  } else {
     alert('Error opening document');
   }
 }; 
