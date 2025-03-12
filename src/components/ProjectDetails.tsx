@@ -555,21 +555,27 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                 onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as BillableStatus }))}
                 className={`form-select mt-1 w-full text-sm font-medium ${getStatusColor(formData.status)}`}
                 required
-                disabled={formData.status === 'NOT_APPROVED' || formData.status === 'PENDING'}
               >
                 {getAvailableStatuses(formData.status).map(status => (
                   <option key={status} value={status}>
-                    {status}
+                    {status.replace('_', ' ')}
                   </option>
                 ))}
               </select>
-              {(formData.status === 'NOT_APPROVED' || formData.status === 'PENDING') && (
-                <p className="mt-1 text-sm text-gray-500">
-                  {formData.status === 'NOT_APPROVED' 
-                    ? "Use 'Send for Approval' to change status to PENDING"
-                    : "Status can only be changed in the Approve Invoices module"}
-                </p>
-              )}
+            </div>
+
+            <div>
+              <label htmlFor="payment_date" className="block text-sm font-medium text-gray-700">
+                Payment Date {formData.status === 'RECEIVED' && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="date"
+                id="payment_date"
+                value={formData.payment_date || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, payment_date: e.target.value }))}
+                className="form-input mt-1 w-full"
+                required={formData.status === 'RECEIVED'}
+              />
             </div>
 
             <div className="space-y-4">

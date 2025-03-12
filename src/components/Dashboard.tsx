@@ -315,35 +315,96 @@ const Dashboard = () => {
     let startDate: Date;
     let endDate: Date;
 
+    // Get current month and year
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
     switch (type) {
       case 'month':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        // Use current month, ensuring timezone doesn't affect the date
+        startDate = new Date(Date.UTC(currentYear, currentMonth, 1));
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate = new Date(Date.UTC(currentYear, currentMonth + 1, 0));
+        endDate.setUTCHours(23, 59, 59, 999);
         break;
       case 'quarter':
-        const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
-        startDate = new Date(now.getFullYear(), quarterMonth, 1);
-        endDate = new Date(now.getFullYear(), quarterMonth + 3, 0);
+        // Financial year quarters
+        let quarterStartMonth: number;
+        if (currentMonth >= 3 && currentMonth <= 5) {
+          quarterStartMonth = 3; // Q1
+        } else if (currentMonth >= 6 && currentMonth <= 8) {
+          quarterStartMonth = 6; // Q2
+        } else if (currentMonth >= 9 && currentMonth <= 11) {
+          quarterStartMonth = 9; // Q3
+        } else {
+          quarterStartMonth = 0; // Q4
+        }
+        startDate = new Date(Date.UTC(currentYear, quarterStartMonth, 1));
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate = new Date(Date.UTC(currentYear, quarterStartMonth + 3, 0));
+        endDate.setUTCHours(23, 59, 59, 999);
         break;
       case 'year':
-        startDate = new Date(now.getFullYear(), 0, 1);
-        endDate = new Date(now.getFullYear(), 11, 31);
+        // Use calendar year (Jan 1st to Dec 31st)
+        startDate = new Date(Date.UTC(currentYear, 0, 1));
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate = new Date(Date.UTC(currentYear, 11, 31));
+        endDate.setUTCHours(23, 59, 59, 999);
         break;
       case 'fy':
-        // Current Financial Year (April 2024 to March 2025)
-        startDate = new Date(2024, 3, 1); // April 1st, 2024
-        endDate = new Date(2025, 2, 31); // March 31st, 2025
+        // Use financial year with UTC dates
+        const fyStartYear = currentMonth <= 3 ? currentYear - 1 : currentYear;
+        startDate = new Date(Date.UTC(fyStartYear, 3, 1)); // April 1st
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate = new Date(Date.UTC(fyStartYear + 1, 2, 31)); // March 31st
+        endDate.setUTCHours(23, 59, 59, 999);
         break;
       case 'custom':
-        startDate = customStart || now;
-        endDate = customEnd || now;
+        if (customStart) {
+          // Ensure we're using UTC for consistent date handling
+          startDate = new Date(Date.UTC(
+            customStart.getFullYear(),
+            customStart.getMonth(),
+            customStart.getDate()
+          ));
+          startDate.setUTCHours(0, 0, 0, 0);
+        } else {
+          startDate = now;
+        }
+        
+        if (customEnd) {
+          endDate = new Date(Date.UTC(
+            customEnd.getFullYear(),
+            customEnd.getMonth(),
+            customEnd.getDate()
+          ));
+          endDate.setUTCHours(23, 59, 59, 999);
+        } else {
+          endDate = now;
+        }
         break;
       default:
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        startDate = new Date(Date.UTC(currentYear, currentMonth, 1));
+        startDate.setUTCHours(0, 0, 0, 0);
+        endDate = new Date(Date.UTC(currentYear, currentMonth + 1, 0));
+        endDate.setUTCHours(23, 59, 59, 999);
     }
 
     setDateFilter({ type, startDate, endDate });
+  };
+
+  // Update the date input handlers to use UTC
+  const handleDateInputChange = (date: string, isStart: boolean) => {
+    const [year, month, day] = date.split('-').map(Number);
+    const newDate = new Date(Date.UTC(year, month - 1, day));
+    
+    if (isStart) {
+      newDate.setUTCHours(0, 0, 0, 0);
+      updateDateFilter('custom', newDate, dateFilter.endDate);
+    } else {
+      newDate.setUTCHours(23, 59, 59, 999);
+      updateDateFilter('custom', dateFilter.startDate, newDate);
+    }
   };
 
   // Calculate Last 6 Months Revenue by Type
@@ -586,27 +647,20 @@ const Dashboard = () => {
 
   // Calculate Average Invoice Collection Time
   const calculateAvgCollectionTime = () => {
-    // Get all items that were both raised and then received
+    // Get all items that were received and have both invoice_date and payment_date
     const completedInvoices = billableItems.filter(item => 
       item.status === 'RECEIVED' &&
-      item.invoice_date
+      item.invoice_date &&
+      item.payment_date
     );
 
     if (completedInvoices.length === 0) return 0;
 
-    // For each invoice, find when it was first raised
-    const totalDays = completedInvoices.reduce((sum, receivedItem) => {
-      // Find the original raised item
-      const raisedItem = billableItems.find(item => 
-        item.id === receivedItem.id &&
-        item.status === 'RAISED'
-      );
-
-      if (!raisedItem?.invoice_date) return sum;
-
-      const raisedDate = new Date(raisedItem.invoice_date);
-      const receivedDate = new Date(receivedItem.invoice_date!);
-      return sum + (receivedDate.getTime() - raisedDate.getTime()) / (1000 * 60 * 60 * 24);
+    // Calculate the total days between invoice date and payment date
+    const totalDays = completedInvoices.reduce((sum, item) => {
+      const invoiceDate = new Date(item.invoice_date!);
+      const paymentDate = new Date(item.payment_date!);
+      return sum + (paymentDate.getTime() - invoiceDate.getTime()) / (1000 * 60 * 60 * 24);
     }, 0);
 
     return Math.round(totalDays / completedInvoices.length);
@@ -699,20 +753,14 @@ const Dashboard = () => {
               type="date"
               className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
               value={dateFilter.startDate.toISOString().split('T')[0]}
-              onChange={(e) => {
-                const newStart = new Date(e.target.value);
-                updateDateFilter('custom', newStart, dateFilter.endDate);
-              }}
+              onChange={(e) => handleDateInputChange(e.target.value, true)}
             />
             <span className="mx-2">to</span>
             <input
               type="date"
               className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
               value={dateFilter.endDate.toISOString().split('T')[0]}
-              onChange={(e) => {
-                const newEnd = new Date(e.target.value);
-                updateDateFilter('custom', dateFilter.startDate, newEnd);
-              }}
+              onChange={(e) => handleDateInputChange(e.target.value, false)}
             />
           </div>
         </div>
@@ -783,34 +831,6 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Current MRR */}
-        <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 shadow-sm ring-1 ring-indigo-200 rounded-lg p-6 relative overflow-hidden">
-          <div className="absolute right-0 top-0 mt-4 mr-4 text-indigo-400">
-            <TrendingUp size={24} />
-          </div>
-          <h3 className="text-sm font-medium text-indigo-600">Monthly Recurring Revenue</h3>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">
-            {formatCurrency(calculateCurrentMRR())}
-          </p>
-          <div className="mt-4">
-            <span className="text-sm text-indigo-700">This Month</span>
-          </div>
-        </div>
-
-        {/* Current NRR */}
-        <div className="bg-gradient-to-br from-pink-50 to-pink-100 shadow-sm ring-1 ring-pink-200 rounded-lg p-6 relative overflow-hidden">
-          <div className="absolute right-0 top-0 mt-4 mr-4 text-pink-400">
-            <ArrowUpRight size={24} />
-          </div>
-          <h3 className="text-sm font-medium text-pink-600">Net Revenue Run Rate</h3>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">
-            {formatCurrency(calculateCurrentNRR())}
-          </p>
-          <div className="mt-4">
-            <span className="text-sm text-pink-700">Annualized Revenue</span>
-          </div>
-        </div>
-
         {/* Outstanding Invoices */}
         <div className="bg-gradient-to-br from-amber-50 to-amber-100 shadow-sm ring-1 ring-amber-200 rounded-lg p-6 relative overflow-hidden">
           <div className="absolute right-0 top-0 mt-4 mr-4 text-amber-400">
@@ -848,7 +868,7 @@ const Dashboard = () => {
           <div className="mt-6">
             {calculateTopCustomers().map((item, index) => (
               <div 
-                key={item.client.id} 
+                key={`${item.client.id}-${index}`}
                 className="group flex items-center justify-between mb-4 last:mb-0"
               >
                 <div className="flex items-center gap-3">
@@ -883,6 +903,8 @@ const Dashboard = () => {
         <h2 className="text-xl font-semibold text-gray-900 mb-6">Monthly Recurring Revenue (MRR)</h2>
         
         {/* MRR Overview Cards */}
+        {/* Commenting out the MRR Overview Cards */}
+        {/*
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           {/* Current MRR */}
           <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6">
@@ -953,6 +975,7 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+        */}
 
         {/* MRR Graph */}
         <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6 mb-6">
