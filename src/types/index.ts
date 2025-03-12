@@ -44,6 +44,9 @@ export interface Project {
   spoc_name: string;
   spoc_mobile: string;
   created_at: string;
+  sales_manager: string;
+  project_manager: string;
+  cx_manager: string;
 }
 
 export interface ProjectFormData {
@@ -51,6 +54,9 @@ export interface ProjectFormData {
   name: string;
   spoc_name: string;
   spoc_mobile: string;
+  sales_manager: string;
+  project_manager: string;
+  cx_manager: string;
 }
 
 export type BillableStatus = 'NOT_APPROVED' | 'PENDING' | 'APPROVED' | 'RAISED' | 'RECEIVED';
@@ -72,6 +78,9 @@ export interface BillableItem {
   amount: number;
   invoice_date: string | null;
   status: BillableStatus;
+  sales_manager: string;
+  project_manager: string;
+  cx_manager: string;
 }
 
 export interface BillableItemFormData {
@@ -89,4 +98,27 @@ export interface BillableItemFormData {
   amount: number;
   invoice_date: string | null;
   status: BillableStatus;
+  sales_manager: string;
+  project_manager: string;
+  cx_manager: string;
+}
+
+export interface PurchaseOrder {
+  id: number;
+  project_id: number;
+  name: string;
+  po_number: string;
+  po_end_date: string;
+  po_value: number;
+  po_document_url: string;
+  created_at: string;
+}
+
+export interface PurchaseOrderFormData {
+  project_id: number;
+  name: string;
+  po_number: string;
+  po_end_date: string;
+  po_value: number;
+  po_document: File;
 }

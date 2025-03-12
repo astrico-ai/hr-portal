@@ -1,15 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import type { BillableItemFormData, BillableType, BillableStatus } from '../types';
-import { saveBillableItem } from '../lib/storage';
+import type { BillableItemFormData, BillableType, BillableStatus, PurchaseOrder, BillableItem, Project } from '../types';
+import { saveBillableItem, getPurchaseOrders, getBillableItems, getProjects } from '../lib/storage';
 
 const BILLABLE_TYPES: BillableType[] = ['LICENSE', 'ONE_TIME', 'OTHERS'];
+const adminUsers = ['Vraj Sheth', 'Sanuj Philip'];
 
 const BillableItemForm = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [billableItems, setBillableItems] = useState<BillableItem[]>([]);
+  const [project, setProject] = useState<Project | null>(null);
   const [formData, setFormData] = useState<BillableItemFormData>({
     project_id: parseInt(projectId || '0'),
     name: '',
@@ -24,8 +28,61 @@ const BillableItemForm = () => {
     invoice_number: null,
     invoice_document: null,
     invoice_date: null,
-    status: 'NOT_APPROVED'
+    status: 'NOT_APPROVED',
+    sales_manager: '',
+    project_manager: '',
+    cx_manager: ''
   });
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [pos, items, projects] = await Promise.all([
+          getPurchaseOrders(parseInt(projectId || '0')),
+          getBillableItems(),
+          getProjects()
+        ]);
+        console.log('Loaded POs:', pos);
+        console.log('Project ID:', projectId);
+        setPurchaseOrders(pos);
+        setBillableItems(items);
+        
+        const currentProject = projects.find(p => p.id === parseInt(projectId || '0'));
+        if (currentProject) {
+          setProject(currentProject);
+          setFormData(prev => ({
+            ...prev,
+            sales_manager: currentProject.sales_manager,
+            project_manager: currentProject.project_manager,
+            cx_manager: currentProject.cx_manager
+          }));
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      }
+    };
+    loadData();
+  }, [projectId]);
+
+  // Calculate available POs with utilization left
+  const availablePOs = purchaseOrders.filter(po => {
+    const utilizedAmount = billableItems
+      .filter(item => item.po_number === po.po_number)
+      .reduce((sum, item) => sum + item.amount, 0);
+    console.log(`PO ${po.po_number} utilized amount:`, utilizedAmount, 'of total:', po.po_value);
+    return utilizedAmount < po.po_value;
+  }).map(po => {
+    const utilizedAmount = billableItems
+      .filter(item => item.po_number === po.po_number)
+      .reduce((sum, item) => sum + item.amount, 0);
+    const remainingAmount = po.po_value - utilizedAmount;
+    return {
+      ...po,
+      remainingAmount
+    };
+  });
+
+  console.log('Available POs:', availablePOs);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +138,7 @@ const BillableItemForm = () => {
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 required
-                className="form-input mt-1"
+                className="form-input mt-1 w-full"
               />
             </div>
 
@@ -94,7 +151,7 @@ const BillableItemForm = () => {
                 value={formData.type}
                 onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as BillableType }))}
                 required
-                className="form-input mt-1"
+                className="form-select mt-1 w-full"
               >
                 {BILLABLE_TYPES.map(type => (
                   <option key={type} value={type}>
@@ -104,47 +161,114 @@ const BillableItemForm = () => {
               </select>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="po_number" className="block text-sm font-medium text-gray-700">
+                  Purchase Order <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="po_number"
+                  value={formData.po_number || ''}
+                  onChange={(e) => {
+                    const selectedPO = purchaseOrders.find(po => po.po_number === e.target.value);
+                    setFormData(prev => ({
+                      ...prev,
+                      po_number: e.target.value || null,
+                      po_end_date: selectedPO?.po_end_date || null
+                    }));
+                  }}
+                  required
+                  className="form-select mt-1 w-full"
+                >
+                  <option value="">Select a PO</option>
+                  <option value="NO_PO_REQUIRED">No PO Required</option>
+                  {availablePOs.map(po => (
+                    <option key={po.id} value={po.po_number}>
+                      {po.name} - ₹{po.remainingAmount.toLocaleString()} available
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="po_end_date" className="block text-sm font-medium text-gray-700">
+                  PO End Date
+                </label>
+                <input
+                  type="date"
+                  id="po_end_date"
+                  value={formData.po_end_date || ''}
+                  className="form-input mt-1 w-full"
+                  disabled
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="sales_manager" className="block text-sm font-medium text-gray-700">
+                  Sales Manager <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="sales_manager"
+                  value={formData.sales_manager}
+                  onChange={(e) => setFormData(prev => ({ ...prev, sales_manager: e.target.value }))}
+                  required
+                  className="form-select mt-1 w-full"
+                >
+                  <option value="">Select Sales Manager</option>
+                  {adminUsers.map(user => (
+                    <option key={user} value={user}>{user}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="project_manager" className="block text-sm font-medium text-gray-700">
+                  Project Manager <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="project_manager"
+                  value={formData.project_manager}
+                  onChange={(e) => setFormData(prev => ({ ...prev, project_manager: e.target.value }))}
+                  required
+                  className="form-select mt-1 w-full"
+                >
+                  <option value="">Select Project Manager</option>
+                  {adminUsers.map(user => (
+                    <option key={user} value={user}>{user}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="cx_manager" className="block text-sm font-medium text-gray-700">
+                  CX Manager <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="cx_manager"
+                  value={formData.cx_manager}
+                  onChange={(e) => setFormData(prev => ({ ...prev, cx_manager: e.target.value }))}
+                  required
+                  className="form-select mt-1 w-full"
+                >
+                  <option value="">Select CX Manager</option>
+                  {adminUsers.map(user => (
+                    <option key={user} value={user}>{user}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div>
               <label htmlFor="po_document" className="block text-sm font-medium text-gray-700">
-                PO Document <span className="text-red-500">*</span>
+                PO Document {formData.po_number && formData.po_number !== 'NO_PO_REQUIRED' && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="file"
                 id="po_document"
                 name="po_document"
                 accept=".pdf,.doc,.docx"
-                required
-                className="form-input mt-1"
+                required={Boolean(formData.po_number && formData.po_number !== 'NO_PO_REQUIRED')}
+                className="form-input mt-1 w-full"
               />
-            </div>
-
-            <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="po_number" className="block text-sm font-medium text-gray-700">
-                  PO Number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  id="po_number"
-                  value={formData.po_number || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, po_number: e.target.value }))}
-                  required
-                  className="form-input mt-1"
-                />
-              </div>
-              <div>
-                <label htmlFor="po_end_date" className="block text-sm font-medium text-gray-700">
-                  PO End Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  id="po_end_date"
-                  value={formData.po_end_date || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, po_end_date: e.target.value }))}
-                  required
-                  className="form-input mt-1"
-                />
-              </div>
             </div>
 
             <div>
@@ -156,11 +280,11 @@ const BillableItemForm = () => {
                 id="proposal_document"
                 name="proposal_document"
                 accept=".pdf,.doc,.docx"
-                className="form-input mt-1"
+                className="form-input mt-1 w-full"
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="start_date" className="block text-sm font-medium text-gray-700">
                   Start Date <span className="text-red-500">*</span>
@@ -171,10 +295,9 @@ const BillableItemForm = () => {
                   value={formData.start_date}
                   onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
                   required
-                  className="form-input mt-1"
+                  className="form-input mt-1 w-full"
                 />
               </div>
-
               <div>
                 <label htmlFor="end_date" className="block text-sm font-medium text-gray-700">
                   End Date <span className="text-red-500">*</span>
@@ -185,7 +308,7 @@ const BillableItemForm = () => {
                   value={formData.end_date}
                   onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
                   required
-                  className="form-input mt-1"
+                  className="form-input mt-1 w-full"
                 />
               </div>
             </div>
@@ -206,7 +329,7 @@ const BillableItemForm = () => {
                   required
                   min="0"
                   step="0.01"
-                  className="form-input pl-7"
+                  className="form-input pl-7 w-full"
                 />
               </div>
             </div>

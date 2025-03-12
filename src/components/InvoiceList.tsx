@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ChevronRight, Search, AlertCircle, Check, X, FileText } from 'lucide-react';
+import { Plus, ChevronRight, Search, AlertCircle, Check, X, FileText, Trash2 } from 'lucide-react';
 import type { Client, Project, BillableItem, BillableType, BillableStatus } from '../types';
 import { getClients } from '../lib/clients';
-import { getProjects, getBillableItems, updateBillableItem } from '../lib/storage';
+import { getProjects, getBillableItems, updateBillableItem, deleteProject } from '../lib/storage';
 import ProjectModal from './ProjectModal';
 import { useNavigate } from 'react-router-dom';
 import { handleDocumentClick } from '../utils/documentUtils';
@@ -40,6 +40,7 @@ const InvoiceList = () => {
   const [activeTab, setActiveTab] = useState<TabType>('projects');
   const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
   const [rejectingItemId, setRejectingItemId] = useState<number | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectWithClient | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -136,7 +137,10 @@ const InvoiceList = () => {
         end_date: item.end_date,
         amount: item.amount,
         invoice_date: item.invoice_date,
-        status: 'APPROVED'
+        status: 'APPROVED',
+        sales_manager: item.sales_manager,
+        project_manager: item.project_manager,
+        cx_manager: item.cx_manager
       };
 
       await updateBillableItem(itemId, updatedItem);
@@ -167,7 +171,10 @@ const InvoiceList = () => {
         end_date: item.end_date,
         amount: item.amount,
         invoice_date: item.invoice_date,
-        status: 'NOT_APPROVED'
+        status: 'NOT_APPROVED',
+        sales_manager: item.sales_manager,
+        project_manager: item.project_manager,
+        cx_manager: item.cx_manager
       };
 
       await updateBillableItem(itemId, updatedItem);
@@ -175,6 +182,16 @@ const InvoiceList = () => {
       setRejectingItemId(null);
     } catch (error) {
       console.error('Failed to reject item:', error);
+    }
+  };
+
+  const handleDeleteProject = async (projectId: number) => {
+    try {
+      await deleteProject(projectId);
+      await loadData(); // Refresh the data
+      setProjectToDelete(null);
+    } catch (error) {
+      console.error('Failed to delete project:', error);
     }
   };
 
@@ -261,7 +278,7 @@ const InvoiceList = () => {
             <div className="sm:flex-auto">
               <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
               <p className="mt-2 text-sm text-gray-700">
-                A list of all projects and their billable items.
+                A list of all projects and their billable items. Click on a project to view details.
               </p>
             </div>
             <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
@@ -275,8 +292,8 @@ const InvoiceList = () => {
             </div>
           </div>
 
-          <div className="mt-8 flex items-center gap-4">
-            <div className="relative flex-1 max-w-lg">
+          <div className="mt-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="relative flex-1 max-w-lg w-full">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-5 w-5 text-gray-400" />
               </div>
@@ -284,21 +301,42 @@ const InvoiceList = () => {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by client, project, or SPOC..."
+                placeholder="Search by project or SPOC..."
                 className="form-input pl-10 w-full"
               />
             </div>
+            <div className="w-full sm:w-64">
+              <select
+                onChange={(e) => {
+                  const clientId = e.target.value;
+                  if (clientId === 'all') {
+                    setFilteredProjects(projects);
+                  } else {
+                    setFilteredProjects(projects.filter(p => p.client.id === parseInt(clientId)));
+                  }
+                }}
+                className="form-select w-full"
+                defaultValue="all"
+              >
+                <option value="all">All Clients</option>
+                {clients.map(client => (
+                  <option key={client.id} value={client.id}>
+                    {client.legal_name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div className="mt-4 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg">
+          <div className="mt-4 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead>
+              <thead className="bg-gray-50">
                 <tr>
                   <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
-                    Client
+                    Project
                   </th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                    Project
+                    Client
                   </th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                     SPOC
@@ -312,8 +350,11 @@ const InvoiceList = () => {
                   <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">
                     Total Amount
                   </th>
-                  <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                    <span className="sr-only">View</span>
+                  <th scope="col" className="hidden">
+                    View
+                  </th>
+                  <th scope="col" className="hidden">
+                    Delete
                   </th>
                 </tr>
               </thead>
@@ -345,14 +386,18 @@ const InvoiceList = () => {
                   filteredProjects.map(({ project, client, itemCount, totalAmount }) => (
                     <tr 
                       key={project.id} 
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => navigate(`/invoices/project/${project.id}`)}
+                      className="hover:bg-gray-50 transition duration-150"
                     >
-                      <td className="py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                        {client.legal_name}
+                      <td className="py-4 pl-4 pr-3 text-sm sm:pl-6">
+                        <button
+                          onClick={() => navigate(`/invoices/project/${project.id}`)}
+                          className="font-medium text-primary-600 hover:text-primary-900"
+                        >
+                          {project.name}
+                        </button>
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-900">
-                        {project.name}
+                        {client.legal_name}
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-500">
                         {project.spoc_name}
@@ -361,13 +406,30 @@ const InvoiceList = () => {
                         {project.spoc_mobile}
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-900 text-right">
-                        {itemCount}
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {itemCount}
+                        </span>
                       </td>
-                      <td className="px-3 py-4 text-sm text-gray-900 text-right">
+                      <td className="px-3 py-4 text-sm font-medium text-gray-900 text-right">
                         ₹{totalAmount.toLocaleString()}
                       </td>
-                      <td className="relative py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                        <ChevronRight className="h-5 w-5 text-gray-400" />
+                      <td className="hidden">
+                        <button 
+                          onClick={() => navigate(`/invoices/project/${project.id}`)}
+                          className="inline-flex items-center justify-center p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors duration-200"
+                          title="View Project"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </button>
+                      </td>
+                      <td className="hidden">
+                        <button
+                          onClick={() => setProjectToDelete({ project, client, itemCount, totalAmount })}
+                          className="inline-flex items-center justify-center p-2 bg-red-50 text-red-600 hover:text-white hover:bg-red-600 rounded-full transition-colors duration-200"
+                          title="Delete Project"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -558,7 +620,7 @@ const InvoiceList = () => {
                         )}
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-500">
-                        {new Date(item.start_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} - {new Date(item.end_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                        {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-900 text-right">
                         ₹{item.amount.toLocaleString()}
@@ -622,6 +684,48 @@ const InvoiceList = () => {
             </div>
           </div>
         </>
+      )}
+
+      {projectToDelete && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-50">
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+              <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <AlertCircle className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                    <h3 className="text-base font-semibold leading-6 text-gray-900">
+                      Delete Project
+                    </h3>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        Are you sure you want to delete the project "{projectToDelete.project.name}"? This action cannot be undone and will also delete all associated billable items.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    className="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto"
+                    onClick={() => handleDeleteProject(projectToDelete.project.id)}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                    onClick={() => setProjectToDelete(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <ProjectModal
