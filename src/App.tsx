@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { FileText, Users, FileInput as FileInvoice, LogOut } from 'lucide-react';
 import ClientList from './components/ClientList';
 import ClientForm from './components/ClientForm';
@@ -20,6 +20,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function Navigation() {
   const { userEmail, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
 
   const handleLogout = () => {
     logout();
@@ -38,20 +40,32 @@ function Navigation() {
             <div className="hidden sm:ml-8 sm:flex sm:space-x-8">
               <Link
                 to="/"
-                className="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium text-gray-900 border-primary-500"
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                  currentPath === '/' 
+                    ? 'border-primary-500 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
               >
                 Dashboard
               </Link>
               <Link
                 to="/clients"
-                className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700"
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                  currentPath.startsWith('/clients')
+                    ? 'border-primary-500 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
               >
                 <Users className="h-4 w-4 mr-2" />
                 Clients
               </Link>
               <Link
                 to="/invoices"
-                className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700"
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                  currentPath.startsWith('/invoices')
+                    ? 'border-primary-500 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
               >
                 <FileInvoice className="h-4 w-4 mr-2" />
                 Invoices
