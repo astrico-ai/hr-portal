@@ -28,6 +28,7 @@ const BillableItemForm = () => {
     invoice_number: null,
     invoice_document: null,
     invoice_date: null,
+    payment_date: null,
     status: 'NOT_APPROVED',
     sales_manager: '',
     project_manager: '',
@@ -332,6 +333,39 @@ const BillableItemForm = () => {
                   className="form-input pl-7 w-full"
                 />
               </div>
+            </div>
+
+            <div>
+              <label htmlFor="status" className="block text-sm font-medium text-gray-700">
+                Status <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="status"
+                value={formData.status}
+                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as BillableStatus }))}
+                className="form-select mt-1 w-full"
+                required
+              >
+                {['NOT_APPROVED', 'PENDING', 'APPROVED', 'RAISED', 'RECEIVED'].map(status => (
+                  <option key={status} value={status}>
+                    {status.replace('_', ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="payment_date" className="block text-sm font-medium text-gray-700">
+                Payment Date {formData.status === 'RECEIVED' && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="date"
+                id="payment_date"
+                value={formData.payment_date || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, payment_date: e.target.value }))}
+                className="form-input mt-1 w-full"
+                required={formData.status === 'RECEIVED'}
+              />
             </div>
           </div>
         </div>

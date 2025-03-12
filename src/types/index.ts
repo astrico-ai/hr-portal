@@ -77,6 +77,7 @@ export interface BillableItem {
   end_date: string;
   amount: number;
   invoice_date: string | null;
+  payment_date: string | null;
   status: BillableStatus;
   sales_manager: string;
   project_manager: string;
@@ -97,6 +98,7 @@ export interface BillableItemFormData {
   end_date: string;
   amount: number;
   invoice_date: string | null;
+  payment_date: string | null;
   status: BillableStatus;
   sales_manager: string;
   project_manager: string;
