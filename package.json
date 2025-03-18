@@ -10,6 +10,8 @@
     "@types/node": "^16.18.86",
     "@types/react": "^18.2.61",
     "@types/react-dom": "^18.2.19",
+    "@vercel/analytics": "^1.5.0",
+    "@vercel/speed-insights": "^1.2.0",
     "chart.js": "^4.4.8",
     "firebase": "^11.4.0",
     "lucide-react": "^0.344.0",
