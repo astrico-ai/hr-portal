@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download } from 'lucide-react';
+import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download, Edit } from 'lucide-react';
 import type { Project, Client, BillableItem, BillableType, BillableStatus, PurchaseOrder } from '../types';
-import { getProjects, getBillableItems, saveProject, updateBillableItem, deleteBillableItem, uploadDocument, getPurchaseOrders, savePurchaseOrder, deletePurchaseOrder } from '../lib/storage';
+import { getProjects, getBillableItems, saveProject, updateBillableItem, deleteBillableItem, uploadDocument, getPurchaseOrders, savePurchaseOrder, deletePurchaseOrder, updatePurchaseOrder } from '../lib/storage';
 import { getClients } from '../lib/clients';
 import { handleDocumentClick } from '../utils/documentUtils';
-import { createInvoiceDocument } from '../utils/invoiceUtils';
 
 interface ProjectInfoProps {
   project: Project;
@@ -295,26 +294,23 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
   const handleCreateInvoice = async () => {
     setLoading(true);
     try {
-      // Generate invoice PDF blob
-      const pdfBlob = await createInvoiceDocument(formData, client, project);
-      
-      // Create a file from the blob
-      const invoiceFile = new File([pdfBlob], `invoice_${formData.id}.pdf`, { type: 'application/pdf' });
+      // Validate required fields for invoice creation
+      if (!formData.invoice_number || !formData.invoice_date || !formData.invoice_raised_by) {
+        alert('Please fill in all required fields (Invoice Number, Invoice Date, and Invoice Raised By)');
+        setLoading(false);
+        return;
+      }
 
-      // Upload the invoice document
-      const invoiceDocumentUrl = await uploadDocument(invoiceFile, formData.id, 'invoice');
-
-      // Update the item with new status and invoice URL
+      // Update the item with new status
       const updatedData = { 
         ...formData, 
         status: 'RAISED' as BillableStatus,
-        invoice_document_url: invoiceDocumentUrl
       };
 
       await onSave(updatedData);
       onClose();
     } catch (error) {
-      console.error('Failed to create invoice:', error);
+      console.error('Failed to update invoice status:', error);
     } finally {
       setLoading(false);
     }
@@ -546,6 +542,30 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
             </div>
 
             <div>
+              <label htmlFor="invoice_raised_by" className="block text-sm font-medium text-gray-700">
+                Invoice Raised By {(formData.status === 'RAISED' || formData.status === 'RECEIVED') && <span className="text-red-500">*</span>}
+              </label>
+              <select
+                id="invoice_raised_by"
+                value={formData.invoice_raised_by || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, invoice_raised_by: e.target.value }))}
+                className="form-select mt-1 w-full"
+                required={formData.status === 'RAISED' || formData.status === 'RECEIVED'}
+              >
+                <option value="">Select Person</option>
+                {project.sales_manager && (
+                  <option value={project.sales_manager}>{project.sales_manager} (Sales Manager)</option>
+                )}
+                {project.project_manager && (
+                  <option value={project.project_manager}>{project.project_manager} (Project Manager)</option>
+                )}
+                {project.cx_manager && (
+                  <option value={project.cx_manager}>{project.cx_manager} (CX Manager)</option>
+                )}
+              </select>
+            </div>
+
+            <div>
               <label htmlFor="status" className="block text-sm font-medium text-gray-700">
                 Status <span className="text-red-500">*</span>
               </label>
@@ -709,6 +729,153 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
   );
 };
 
+interface EditPOModalProps {
+  po: PurchaseOrder;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (poId: number, updates: Partial<PurchaseOrder>, newDocument?: File) => Promise<void>;
+}
+
+const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }) => {
+  const [formData, setFormData] = useState(po);
+  const [newDocument, setNewDocument] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onSave(po.id, formData, newDocument || undefined);
+      onClose();
+    } catch (error) {
+      console.error('Failed to update purchase order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 my-8">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">
+              Edit Purchase Order
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-500"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-6 py-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+          <div className="space-y-6">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                PO Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="form-input w-full"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="po_number" className="block text-sm font-medium text-gray-700">
+                PO Number <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="po_number"
+                value={formData.po_number}
+                onChange={(e) => setFormData(prev => ({ ...prev, po_number: e.target.value }))}
+                className="form-input w-full"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="po_end_date" className="block text-sm font-medium text-gray-700">
+                PO End Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                id="po_end_date"
+                value={formData.po_end_date || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, po_end_date: e.target.value }))}
+                className="form-input w-full"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="po_value" className="block text-sm font-medium text-gray-700">
+                PO Value (without GST) <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">₹</span>
+                <input
+                  type="number"
+                  id="po_value"
+                  value={formData.po_value || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, po_value: parseFloat(e.target.value) }))}
+                  className="form-input pl-7 w-full"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                PO Document
+              </label>
+              <div className="flex items-center gap-4">
+                {po.po_document_url && (
+                  <a
+                    href={po.po_document_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary-600 hover:text-primary-900"
+                    title="Download PO"
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                )}
+                <input
+                  type="file"
+                  onChange={(e) => setNewDocument(e.target.files?.[0] || null)}
+                  accept=".pdf,.doc,.docx"
+                  className="form-input flex-1"
+                />
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn btn-secondary"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn btn-primary"
+          >
+            {loading ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ProjectDetails: React.FC = () => {
   const { projectId: projectIdParam } = useParams();
   const navigate = useNavigate();
@@ -728,6 +895,7 @@ const ProjectDetails: React.FC = () => {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [poUtilization, setPOUtilization] = useState<{ [key: string]: number }>({});
   const [deletingPOId, setDeletingPOId] = useState<number | null>(null);
+  const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
 
   const loadData = async () => {
     try {
@@ -874,6 +1042,16 @@ const ProjectDetails: React.FC = () => {
       setDeletingPOId(null);
     } catch (error) {
       console.error('Failed to delete purchase order:', error);
+    }
+  };
+
+  const handlePOEdit = async (poId: number, updates: Partial<PurchaseOrder>, newDocument?: File) => {
+    try {
+      const updatedPO = await updatePurchaseOrder({ ...updates, id: poId }, newDocument);
+      setPurchaseOrders(purchaseOrders.map(po => po.id === poId ? updatedPO : po));
+      setEditingPO(null);
+    } catch (error) {
+      console.error('Failed to update purchase order:', error);
     }
   };
 
@@ -1147,9 +1325,6 @@ const ProjectDetails: React.FC = () => {
                           PO Number
                         </th>
                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                          PO End Date
-                        </th>
-                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                           Period
                         </th>
                         <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">
@@ -1160,6 +1335,12 @@ const ProjectDetails: React.FC = () => {
                         </th>
                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                           Invoice Date
+                        </th>
+                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                          Payment Date
+                        </th>
+                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                          Invoice Raised By
                         </th>
                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                           Status
@@ -1202,9 +1383,6 @@ const ProjectDetails: React.FC = () => {
                               )}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-500">
-                              {item.po_end_date ? new Date(item.po_end_date).toLocaleDateString() : '-'}
-                            </td>
-                            <td className="px-3 py-4 text-sm text-gray-500">
                               {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-900 text-right">
@@ -1228,6 +1406,12 @@ const ProjectDetails: React.FC = () => {
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-900">
                               {item.invoice_date ? new Date(item.invoice_date).toLocaleDateString() : '-'}
+                            </td>
+                            <td className="px-3 py-4 text-sm text-gray-900">
+                              {item.payment_date ? new Date(item.payment_date).toLocaleDateString() : '-'}
+                            </td>
+                            <td className="px-3 py-4 text-sm text-gray-500">
+                              {item.invoice_raised_by || '-'}
                             </td>
                             <td className="px-3 py-4">
                               <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(item.status)}`}>
@@ -1294,9 +1478,6 @@ const ProjectDetails: React.FC = () => {
                               )}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-500">
-                              {item.po_end_date ? new Date(item.po_end_date).toLocaleDateString() : '-'}
-                            </td>
-                            <td className="px-3 py-4 text-sm text-gray-500">
                               {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-900 text-right">
@@ -1320,6 +1501,12 @@ const ProjectDetails: React.FC = () => {
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-900">
                               {item.invoice_date ? new Date(item.invoice_date).toLocaleDateString() : '-'}
+                            </td>
+                            <td className="px-3 py-4 text-sm text-gray-900">
+                              {item.payment_date ? new Date(item.payment_date).toLocaleDateString() : '-'}
+                            </td>
+                            <td className="px-3 py-4 text-sm text-gray-500">
+                              {item.invoice_raised_by || '-'}
                             </td>
                             <td className="px-3 py-4">
                               <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(item.status)}`}>
@@ -1552,6 +1739,13 @@ const ProjectDetails: React.FC = () => {
                                   </button>
                                 )}
                                 <button
+                                  onClick={() => setEditingPO(po)}
+                                  className="text-blue-600 hover:text-blue-900"
+                                  title="Edit PO"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <button
                                   onClick={() => setDeletingPOId(po.id)}
                                   className="text-red-600 hover:text-red-900"
                                   title="Delete PO"
@@ -1633,6 +1827,15 @@ const ProjectDetails: React.FC = () => {
           billableItems={billableItems}
           onSave={handleItemSave}
           onClose={() => setEditingItem(null)}
+        />
+      )}
+
+      {editingPO && (
+        <EditPOModal
+          po={editingPO}
+          isOpen={true}
+          onClose={() => setEditingPO(null)}
+          onSave={handlePOEdit}
         />
       )}
 

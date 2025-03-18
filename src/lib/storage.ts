@@ -293,4 +293,23 @@ export async function deletePurchaseOrder(poId: number): Promise<void> {
     console.error('Error deleting purchase order:', error);
     throw error;
   }
-} 
+}
+
+export const updatePurchaseOrder = async (po: Partial<PurchaseOrder> & { id: number }, document?: File): Promise<PurchaseOrder> => {
+  const formData = new FormData();
+  formData.append('data', JSON.stringify(po));
+  if (document) {
+    formData.append('document', document);
+  }
+  
+  const response = await fetch(`${API_BASE_URL}/purchase-orders/${po.id}`, {
+    method: 'PUT',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to update purchase order');
+  }
+
+  return response.json();
+}; 
