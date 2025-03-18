@@ -305,27 +305,6 @@ const InvoiceList = () => {
                 className="form-input pl-10 w-full"
               />
             </div>
-            <div className="w-full sm:w-64">
-              <select
-                onChange={(e) => {
-                  const clientId = e.target.value;
-                  if (clientId === 'all') {
-                    setFilteredProjects(projects);
-                  } else {
-                    setFilteredProjects(projects.filter(p => p.client.id === parseInt(clientId)));
-                  }
-                }}
-                className="form-select w-full"
-                defaultValue="all"
-              >
-                <option value="all">All Clients</option>
-                {clients.map(client => (
-                  <option key={client.id} value={client.id}>
-                    {client.legal_name}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
           <div className="mt-4 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg overflow-hidden">

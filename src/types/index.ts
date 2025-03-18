@@ -82,6 +82,7 @@ export interface BillableItem {
   sales_manager: string;
   project_manager: string;
   cx_manager: string;
+  invoice_raised_by: string | null;
 }
 
 export interface BillableItemFormData {
@@ -103,6 +104,7 @@ export interface BillableItemFormData {
   sales_manager: string;
   project_manager: string;
   cx_manager: string;
+  invoice_raised_by: string | null;
 }
 
 export interface PurchaseOrder {
