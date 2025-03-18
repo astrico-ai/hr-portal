@@ -11,6 +11,10 @@ import BillableItemFormWrapper from './components/BillableItemFormWrapper';
 import Login from './components/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ApproveInvoices from './components/ApproveInvoices';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
+
+
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -120,6 +124,8 @@ function App() {
               }
             />
           </Routes>
+          <Analytics />
+          <SpeedInsights />
         </div>
       </Router>
     </AuthProvider>
