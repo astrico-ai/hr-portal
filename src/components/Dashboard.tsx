@@ -841,7 +841,7 @@ const Dashboard = () => {
   // Calculate Average Invoice Collection Time
   const calculateAvgCollectionTime = () => {
     // Get all items that were received and have both invoice_date and payment_date
-    const completedInvoices = billableItems.filter(item => 
+    const completedInvoices = getDateFilteredItems(billableItems).filter(item => 
       item.status === 'RECEIVED' &&
       item.invoice_date &&
       item.payment_date
@@ -1296,52 +1296,52 @@ const Dashboard = () => {
                   }}
                 />
               ) : (
-                <Line
-                  data={{
-                    labels: ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
-                    datasets: [
-                      {
-                        label: selectedRevenueType,
-                        data: Array.from({ length: 12 }, (_, i) => {
-                          const year = 2024;
-                          const month = i + 3; // Convert to actual month (0-11)
-                          return getMonthlyRevenue(selectedRevenueType, year, month);
-                        }),
-                        borderColor: selectedRevenueType === 'MRR' 
-                          ? 'rgb(79, 70, 229)' 
+              <Line
+                data={{
+                  labels: ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
+                  datasets: [
+                    {
+                      label: selectedRevenueType,
+                      data: Array.from({ length: 12 }, (_, i) => {
+                        const year = 2024;
+                        const month = i + 3; // Convert to actual month (0-11)
+                        return getMonthlyRevenue(selectedRevenueType, year, month);
+                      }),
+                      borderColor: selectedRevenueType === 'MRR' 
+                        ? 'rgb(79, 70, 229)' 
                           : 'rgb(20, 184, 166)',
-                        backgroundColor: selectedRevenueType === 'MRR'
-                          ? 'rgba(79, 70, 229, 0.1)'
+                      backgroundColor: selectedRevenueType === 'MRR'
+                        ? 'rgba(79, 70, 229, 0.1)'
                           : 'rgba(20, 184, 166, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                      }
-                    ]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: {
-                          callback: (value) => `₹${(value as number).toLocaleString('en-IN')}`
-                        }
-                      }
-                    },
-                    plugins: {
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `${selectedRevenueType}: ₹${context.parsed.y.toLocaleString('en-IN')}`
-                        }
-                      },
-                      title: {
-                        display: true,
-                        text: `${selectedRevenueType === 'MRR' ? 'Monthly Recurring Revenue' : 'Other Revenue'} Trend`
+                      fill: true,
+                      tension: 0.4,
+                    }
+                  ]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                      ticks: {
+                        callback: (value) => `₹${(value as number).toLocaleString('en-IN')}`
                       }
                     }
-                  }}
-                />
+                  },
+                  plugins: {
+                    tooltip: {
+                      callbacks: {
+                        label: (context) => `${selectedRevenueType}: ₹${context.parsed.y.toLocaleString('en-IN')}`
+                      }
+                    },
+                    title: {
+                      display: true,
+                        text: `${selectedRevenueType === 'MRR' ? 'Monthly Recurring Revenue' : 'Other Revenue'} Trend`
+                    }
+                  }
+                }}
+              />
               )}
             </div>
           </div>
@@ -1497,11 +1497,11 @@ const Dashboard = () => {
                             />
                             <span className="ml-2">{dept}</span>
                           </label>
-                        ))}
-                      </div>
+                ))}
+            </div>
                     </div>
                   )}
-                </div>
+                    </div>
                 {teamDateFilter.type === 'custom' && (
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-2">
@@ -1512,7 +1512,7 @@ const Dashboard = () => {
                         value={teamDateFilter.startDate.toISOString().split('T')[0]}
                         onChange={(e) => handleTeamDateFilterChange('custom', new Date(e.target.value), teamDateFilter.endDate)}
                       />
-                    </div>
+                  </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-500">To:</span>
                       <input
@@ -1521,11 +1521,11 @@ const Dashboard = () => {
                         value={teamDateFilter.endDate.toISOString().split('T')[0]}
                         onChange={(e) => handleTeamDateFilterChange('custom', teamDateFilter.startDate, new Date(e.target.value))}
                       />
+            </div>
+                    </div>
+                )}
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
           </div>
 
           <div className="overflow-x-auto">

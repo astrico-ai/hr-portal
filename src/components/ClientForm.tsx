@@ -84,9 +84,12 @@ const ClientForm = () => {
     try {
       const finalFormData = {
         ...formData,
-        msa_document: msaDocument,
-        nda_document: ndaDocument,
-        other_documents: otherDocuments,
+        msa_document: msaDocument || undefined,
+        nda_document: ndaDocument || undefined,
+        other_documents: otherDocuments.map(doc => ({
+          name: doc.name,
+          file: doc.file || undefined
+        })),
       };
       await saveClient(id ? parseInt(id) : undefined, finalFormData);
       navigate('/clients');
@@ -116,23 +119,21 @@ const ClientForm = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="md:flex md:items-center md:justify-between">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigate('/clients')} 
-            className="btn btn-secondary"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </button>
-          <h1 className="text-2xl font-semibold text-gray-900">
-            {id ? 'Edit Client' : 'New Client'}
-          </h1>
-        </div>
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex items-center gap-4 mb-6">
+        <button 
+          onClick={() => navigate('/clients')} 
+          className="btn btn-secondary"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+        <h1 className="text-2xl font-semibold text-gray-900">
+          {id ? 'Edit Client' : 'New Client'}
+        </h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-8 max-w-2xl">
+      <form onSubmit={handleSubmit} className="mt-8">
         <div className="bg-white shadow-sm ring-1 ring-gray-200 px-4 py-5 sm:rounded-lg sm:p-6">
           <div className="space-y-6">
             <div>
@@ -154,51 +155,55 @@ const ClientForm = () => {
 
                 <div className="sm:col-span-4">
                   <label htmlFor="gst_number" className="block text-sm font-medium text-gray-700">
-                    GST Number
+                    GST Number <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     id="gst_number"
                     value={formData.gst_number}
                     onChange={(e) => setFormData(prev => ({ ...prev, gst_number: e.target.value }))}
+                    required
                     className="form-input mt-1"
                   />
                 </div>
 
                 <div className="sm:col-span-6">
                   <label htmlFor="billing_address" className="block text-sm font-medium text-gray-700">
-                    Billing Address
+                    Billing Address <span className="text-red-500">*</span>
                   </label>
                   <textarea
                     id="billing_address"
                     rows={3}
                     value={formData.billing_address}
                     onChange={(e) => setFormData(prev => ({ ...prev, billing_address: e.target.value }))}
+                    required
                     className="form-input mt-1"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
                   <label htmlFor="pincode" className="block text-sm font-medium text-gray-700">
-                    Pincode
+                    Pincode <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     id="pincode"
                     value={formData.pincode}
                     onChange={(e) => setFormData(prev => ({ ...prev, pincode: e.target.value }))}
+                    required
                     className="form-input mt-1"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
                   <label htmlFor="state" className="block text-sm font-medium text-gray-700">
-                    State
+                    State <span className="text-red-500">*</span>
                   </label>
                   <select
                     id="state"
                     value={formData.state}
                     onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                    required
                     className="form-input mt-1"
                   >
                     <option value="">Select a state</option>
@@ -210,15 +215,20 @@ const ClientForm = () => {
 
                 <div className="sm:col-span-2">
                   <label htmlFor="country" className="block text-sm font-medium text-gray-700">
-                    Country
+                    Country <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     id="country"
                     value={formData.country}
                     onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
+                    required
                     className="form-input mt-1"
-                  />
+                  >
+                    <option value="">Select a country</option>
+                    {COUNTRIES.map(country => (
+                      <option key={country} value={country}>{country}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>

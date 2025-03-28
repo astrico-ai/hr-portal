@@ -134,7 +134,17 @@ export const saveBillableItem = async (formData: BillableItemFormData): Promise<
     let proposalDocumentUrl: string | null = null;
     let invoiceDocumentUrl: string | null = null;
 
-    if (formData.po_document) {
+    // If we have a PO number, get the PO document URL from the existing PO
+    if (formData.po_number && formData.po_number !== 'NO_PO_REQUIRED') {
+      const purchaseOrders = await getPurchaseOrders(formData.project_id);
+      const selectedPO = purchaseOrders.find(po => po.po_number === formData.po_number);
+      if (selectedPO) {
+        poDocumentUrl = selectedPO.po_document_url;
+      }
+    }
+
+    // Only handle PO document upload if we're not using an existing PO
+    if (formData.po_document && !poDocumentUrl) {
       poDocumentUrl = await fileToBase64(formData.po_document);
     }
 
@@ -167,10 +177,12 @@ export const saveBillableItem = async (formData: BillableItemFormData): Promise<
       end_date: formData.end_date,
       amount: formData.amount,
       invoice_date: formData.invoice_date || null,
+      payment_date: formData.payment_date || null,
       status: formData.status || 'PENDING',
       sales_manager: formData.sales_manager,
       project_manager: formData.project_manager,
-      cx_manager: formData.cx_manager
+      cx_manager: formData.cx_manager,
+      invoice_raised_by: formData.invoice_raised_by || null
     };
 
     // Remove any undefined values before saving to Firestore
