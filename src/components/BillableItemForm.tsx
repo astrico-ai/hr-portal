@@ -93,10 +93,12 @@ const BillableItemForm = () => {
     try {
       const form = e.target as HTMLFormElement;
       const proposalDocumentInput = form.querySelector<HTMLInputElement>('#proposal_document');
-
+      
       const submitData: BillableItemFormData = {
         ...formData,
         proposal_document: proposalDocumentInput?.files?.[0] || null,
+        // Don't include a PO document since we're using an existing PO
+        po_document: null
       };
 
       await saveBillableItem(submitData);
@@ -172,7 +174,9 @@ const BillableItemForm = () => {
                       const selectedPO = purchaseOrders.find(po => po.po_number === e.target.value);
                       setFormData(prev => ({
                         ...prev,
-                        po_number: e.target.value || null
+                        po_number: e.target.value || null,
+                        po_end_date: selectedPO?.po_end_date || null,
+                        po_document_url: selectedPO?.po_document_url || null
                       }));
                     }}
                     required

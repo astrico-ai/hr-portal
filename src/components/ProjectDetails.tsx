@@ -218,13 +218,22 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
 
   // Calculate available POs with utilization left
   const availablePOs = purchaseOrders.filter(po => {
+    // Include current PO in available list if it's already selected
+    if (formData.po_number === po.po_number) return true;
+
     const utilizedAmount = billableItems
-      .filter(billableItem => billableItem.po_number === po.po_number)
+      .filter(billableItem => 
+        billableItem.po_number === po.po_number && 
+        billableItem.id !== item.id // Exclude current item from utilization calculation
+      )
       .reduce((sum, billableItem) => sum + billableItem.amount, 0);
     return utilizedAmount < po.po_value;
   }).map(po => {
     const utilizedAmount = billableItems
-      .filter(billableItem => billableItem.po_number === po.po_number)
+      .filter(billableItem => 
+        billableItem.po_number === po.po_number &&
+        billableItem.id !== item.id
+      )
       .reduce((sum, billableItem) => sum + billableItem.amount, 0);
     const remainingAmount = po.po_value - utilizedAmount;
     return {
@@ -269,7 +278,30 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
     e.preventDefault();
     setLoading(true);
     try {
-      await onSave(formData, poDocument || undefined, proposalDocument || undefined, invoiceDocument || undefined);
+      // Validate required fields for RAISED or RECEIVED status
+      if (formData.status === 'RAISED' || formData.status === 'RECEIVED') {
+        if (!formData.invoice_number || !formData.invoice_date || !formData.invoice_raised_by) {
+          alert('Please fill in all required fields (Invoice Number, Invoice Date, and Invoice Raised By)');
+          setLoading(false);
+          return;
+        }
+        
+        // Check for invoice document
+        if (!formData.invoice_document_url && !invoiceDocument) {
+          alert('Please upload an invoice document');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // If status is changing to RECEIVED, validate payment date
+      if (formData.status === 'RECEIVED' && !formData.payment_date) {
+        alert('Payment Date is required when status is RECEIVED');
+        setLoading(false);
+        return;
+      }
+
+      await onSave(formData, poDocument, proposalDocument, invoiceDocument);
       onClose();
     } catch (error) {
       console.error('Failed to save item:', error);
@@ -380,13 +412,15 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                     const selectedPO = purchaseOrders.find(po => po.po_number === e.target.value);
                     setFormData(prev => ({
                       ...prev,
-                      po_number: e.target.value,
-                      po_end_date: selectedPO?.po_end_date || null
+                      po_number: e.target.value || null,
+                      po_end_date: selectedPO?.po_end_date || null,
+                      po_document_url: selectedPO?.po_document_url || null // Link PO document
                     }));
                   }}
                   className="form-select mt-1 w-full"
                 >
                   <option value="">Select a PO</option>
+                  <option value="NO_PO_REQUIRED">No PO Required</option>
                   {availablePOs.map(po => (
                     <option key={po.id} value={po.po_number}>
                       {po.name} - ₹{po.remainingAmount.toLocaleString()} available
