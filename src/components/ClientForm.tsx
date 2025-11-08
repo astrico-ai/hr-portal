@@ -290,7 +290,10 @@ const ClientForm = () => {
                             />
                             <input
                               type="file"
-                              onChange={(e) => handleOtherDocumentChange(index, 'file', e.target.files?.[0] || null)}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleOtherDocumentChange(index, 'file', file);
+                              }}
                               className="form-input"
                               accept=".pdf,.doc,.docx"
                               required

@@ -26,7 +26,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
     setLoading(true);
 
     try {
-      await saveProject(formData);
+      await saveProject(formData as any);
       onSuccess();
       onClose();
       setFormData({ client_id: 0, name: '', spoc_name: '', spoc_mobile: '', sales_manager: '', project_manager: '', cx_manager: '' });

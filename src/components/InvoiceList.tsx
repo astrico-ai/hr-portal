@@ -137,10 +137,12 @@ const InvoiceList = () => {
         end_date: item.end_date,
         amount: item.amount,
         invoice_date: item.invoice_date,
+        payment_date: item.payment_date,
         status: 'APPROVED',
         sales_manager: item.sales_manager,
         project_manager: item.project_manager,
-        cx_manager: item.cx_manager
+        cx_manager: item.cx_manager,
+        invoice_raised_by: item.invoice_raised_by
       };
 
       await updateBillableItem(itemId, updatedItem);
@@ -171,10 +173,12 @@ const InvoiceList = () => {
         end_date: item.end_date,
         amount: item.amount,
         invoice_date: item.invoice_date,
+        payment_date: item.payment_date,
         status: 'NOT_APPROVED',
         sales_manager: item.sales_manager,
         project_manager: item.project_manager,
-        cx_manager: item.cx_manager
+        cx_manager: item.cx_manager,
+        invoice_raised_by: item.invoice_raised_by
       };
 
       await updateBillableItem(itemId, updatedItem);

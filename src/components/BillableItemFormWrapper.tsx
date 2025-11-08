@@ -44,14 +44,7 @@ const BillableItemFormWrapper = () => {
     );
   }
 
-  return (
-    <BillableItemForm
-      project={project}
-      onSuccess={() => {
-        navigate('/invoices');
-      }}
-    />
-  );
+  return <BillableItemForm />;
 };
 
 export default BillableItemFormWrapper; 

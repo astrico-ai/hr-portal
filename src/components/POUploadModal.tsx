@@ -13,11 +13,11 @@ const POUploadModal: React.FC<POUploadModalProps> = ({ isOpen, onClose, onUpload
   const [step, setStep] = useState<'upload' | 'form'>('upload');
   const [document, setDocument] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState<Omit<PurchaseOrderFormData, 'document' | 'project_id'>>({
+  const [formData, setFormData] = useState<Omit<PurchaseOrderFormData, 'po_document' | 'project_id'>>({
     name: '',
     po_number: '',
-    amount: 0,
-    end_date: '',
+    po_value: 0,
+    po_end_date: '',
   });
 
   const handleDocumentSelect = (file: File) => {
@@ -34,7 +34,7 @@ const POUploadModal: React.FC<POUploadModalProps> = ({ isOpen, onClose, onUpload
       await onUpload({
         ...formData,
         project_id: projectId,
-        document,
+        po_document: document,
       });
       onClose();
       // Reset form
@@ -43,8 +43,8 @@ const POUploadModal: React.FC<POUploadModalProps> = ({ isOpen, onClose, onUpload
       setFormData({
         name: '',
         po_number: '',
-        amount: 0,
-        end_date: '',
+        po_value: 0,
+        po_end_date: '',
       });
     } catch (error) {
       console.error('Failed to upload PO:', error);
@@ -133,21 +133,21 @@ const POUploadModal: React.FC<POUploadModalProps> = ({ isOpen, onClose, onUpload
               </div>
 
               <div>
-                <label htmlFor="end_date" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="po_end_date" className="block text-sm font-medium text-gray-700">
                   PO End Date <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
-                  id="end_date"
-                  value={formData.end_date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                  id="po_end_date"
+                  value={formData.po_end_date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, po_end_date: e.target.value }))}
                   className="form-input mt-1 block w-full"
                   required
                 />
               </div>
 
               <div>
-                <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="po_value" className="block text-sm font-medium text-gray-700">
                   PO Value <span className="text-red-500">*</span>
                 </label>
                 <div className="mt-1 relative rounded-md shadow-sm">
@@ -156,9 +156,9 @@ const POUploadModal: React.FC<POUploadModalProps> = ({ isOpen, onClose, onUpload
                   </div>
                   <input
                     type="number"
-                    id="amount"
-                    value={formData.amount}
-                    onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+                    id="po_value"
+                    value={formData.po_value}
+                    onChange={(e) => setFormData(prev => ({ ...prev, po_value: parseFloat(e.target.value) }))}
                     className="form-input block w-full pl-7"
                     min="0"
                     step="0.01"

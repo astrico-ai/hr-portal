@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download, Edit } from 'lucide-react';
 import type { Project, Client, BillableItem, BillableType, BillableStatus, PurchaseOrder } from '../types';
-import { getProjects, getBillableItems, saveProject, updateBillableItem, deleteBillableItem, uploadDocument, getPurchaseOrders, savePurchaseOrder, deletePurchaseOrder, updatePurchaseOrder } from '../lib/storage';
+import { getProjects, getBillableItems, saveProject, updateBillableItem, deleteBillableItem, uploadDocument } from '../lib/storage';
+import { getPurchaseOrders, savePurchaseOrder, deletePurchaseOrder, updatePurchaseOrder } from '../lib/purchaseOrders';
 import { getClients } from '../lib/clients';
 import { handleDocumentClick } from '../utils/documentUtils';
 
@@ -301,7 +302,12 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
         return;
       }
 
-      await onSave(formData, poDocument, proposalDocument, invoiceDocument);
+      await onSave(
+        formData,
+        poDocument || undefined,
+        proposalDocument || undefined,
+        invoiceDocument || undefined
+      );
       onClose();
     } catch (error) {
       console.error('Failed to save item:', error);
@@ -1081,7 +1087,7 @@ const ProjectDetails: React.FC = () => {
 
   const handlePOEdit = async (poId: number, updates: Partial<PurchaseOrder>, newDocument?: File) => {
     try {
-      const updatedPO = await updatePurchaseOrder({ ...updates, id: poId }, newDocument);
+      const updatedPO = await updatePurchaseOrder(poId, updates, newDocument);
       setPurchaseOrders(purchaseOrders.map(po => po.id === poId ? updatedPO : po));
       setEditingPO(null);
     } catch (error) {
