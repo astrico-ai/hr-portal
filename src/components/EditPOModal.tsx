@@ -15,8 +15,8 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
   const [formData, setFormData] = useState({
     name: po.name,
     po_number: po.po_number,
-    amount: po.amount,
-    end_date: po.end_date,
+    po_value: po.po_value,
+    po_end_date: po.po_end_date,
   });
   const [document, setDocument] = useState<File | null>(null);
   const [keepExistingDocument, setKeepExistingDocument] = useState(true);
@@ -29,7 +29,7 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
         po.id,
         {
           ...formData,
-          document_url: keepExistingDocument ? po.document_url : '',
+          po_document_url: keepExistingDocument ? po.po_document_url : '',
         },
         !keepExistingDocument && document ? document : undefined
       );
@@ -89,21 +89,21 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
             </div>
 
             <div>
-              <label htmlFor="end_date" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="po_end_date" className="block text-sm font-medium text-gray-700">
                 PO End Date <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
-                id="end_date"
-                value={formData.end_date}
-                onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                id="po_end_date"
+                value={formData.po_end_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, po_end_date: e.target.value }))}
                 className="form-input mt-1 block w-full"
                 required
               />
             </div>
 
             <div>
-              <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="po_value" className="block text-sm font-medium text-gray-700">
                 Amount <span className="text-red-500">*</span>
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
@@ -112,9 +112,9 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
                 </div>
                 <input
                   type="number"
-                  id="amount"
-                  value={formData.amount}
-                  onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+                  id="po_value"
+                  value={formData.po_value}
+                  onChange={(e) => setFormData(prev => ({ ...prev, po_value: parseFloat(e.target.value) }))}
                   className="form-input block w-full pl-7"
                   min="0"
                   step="0.01"
@@ -127,14 +127,14 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 PO Document
               </label>
-              {keepExistingDocument && po.document_url ? (
+              {keepExistingDocument && po.po_document_url ? (
                 <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
                   <div className="flex items-center">
                     <button
                       type="button"
                       onClick={(e) => {
                         e.preventDefault();
-                        handleDocumentClick(po.document_url);
+                        handleDocumentClick(po.po_document_url);
                       }}
                       className="text-primary-600 hover:text-primary-900 flex items-center"
                     >
@@ -160,7 +160,7 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
                     className="form-input w-full"
                     required={!keepExistingDocument}
                   />
-                  {po.document_url && (
+                  {po.po_document_url && (
                     <button
                       type="button"
                       onClick={() => setKeepExistingDocument(true)}

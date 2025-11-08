@@ -33,18 +33,17 @@ export const savePurchaseOrder = async (formData: PurchaseOrderFormData): Promis
     const newId = pos.length > 0 ? Math.max(...pos.map(po => po.id)) + 1 : 1;
 
     // Convert document to base64
-    const documentUrl = await saveFile(formData.document);
+    const documentUrl = await saveFile(formData.po_document);
 
     const newPO: PurchaseOrder = {
       id: newId,
       project_id: formData.project_id,
       name: formData.name,
       po_number: formData.po_number,
-      amount: formData.amount,
-      document_url: documentUrl,
-      end_date: formData.end_date,
+      po_value: formData.po_value,
+      po_document_url: documentUrl,
+      po_end_date: formData.po_end_date,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
 
     await setDocument(COLLECTIONS.PURCHASE_ORDERS, newId.toString(), newPO);
@@ -63,8 +62,8 @@ export const updatePurchaseOrder = async (id: number, updates: Partial<PurchaseO
     }
     const currentPO = doc as unknown as PurchaseOrder;
 
-    let documentUrl = updates.document_url || currentPO.document_url;
-    
+    let documentUrl = updates.po_document_url || currentPO.po_document_url;
+
     // If there's a new document, convert it to base64
     if (newDocument) {
       documentUrl = await saveFile(newDocument);
@@ -73,8 +72,7 @@ export const updatePurchaseOrder = async (id: number, updates: Partial<PurchaseO
     const updatedPO: PurchaseOrder = {
       ...currentPO,
       ...updates,
-      document_url: documentUrl,
-      updated_at: new Date().toISOString(),
+      po_document_url: documentUrl,
     };
 
     await updateDocument(COLLECTIONS.PURCHASE_ORDERS, id.toString(), updatedPO);
