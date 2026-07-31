@@ -33,6 +33,10 @@ import {
   Legend
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
+import LicenseGantt from './LicenseGantt';
+import OneTimeChart from './OneTimeChart';
+import ReceivablesAging from './ReceivablesAging';
+import NextDueInvoices from './NextDueInvoices';
 import { getBillableItems, getClients, getProjects } from '../lib/storage';
 import { getFinancialYearDates, getCurrentQuarter, getLastSixMonths, formatCurrency } from '../utils/dateUtils';
 import type { BillableItem, Client, Project } from '../types';
@@ -82,6 +86,8 @@ interface BaseProject {
   project_manager?: string;
   cx_manager?: string;
   status: 'ACTIVE' | 'INACTIVE';
+  is_active?: boolean;
+  inactive_date?: string | null;
   created_at: string;
 }
 
@@ -93,6 +99,7 @@ interface ProjectWithManagers extends BaseProject {
   start_date: string;
   end_date: string;
   po_number: string;
+  mrr: number;
 }
 
 interface ManagerStats {
@@ -248,6 +255,13 @@ const Dashboard = () => {
       endDate
     };
   });
+  // Local string state for the date inputs. Binding the native date inputs
+  // directly to dateFilter made them re-render and reset the caret on every
+  // keystroke, so typing a year (e.g. 2025) dropped digits and produced junk
+  // like 1905. We type into these strings freely and only commit valid dates.
+  const [startInput, setStartInput] = useState('');
+  const [endInput, setEndInput] = useState('');
+
   const [selectedRevenueType, setSelectedRevenueType] = useState<RevenueType>('MRR');
 
   // Filter state
@@ -564,16 +578,19 @@ const Dashboard = () => {
         break;
       case 'custom':
         if (customStart && customEnd) {
+          // Keep everything in UTC to match the date inputs (which read/write
+          // via toISOString / Date.UTC). Using local setHours here shifted the
+          // day by the timezone offset, e.g. picking the 15th showed the 14th.
           startDate = new Date(customStart);
-          startDate.setHours(0, 0, 0, 0);
+          startDate.setUTCHours(0, 0, 0, 0);
           endDate = new Date(customEnd);
-          endDate.setHours(23, 59, 59, 999);
+          endDate.setUTCHours(23, 59, 59, 999);
         } else {
           // When switching to custom without dates, use current month as default
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          startDate.setHours(0, 0, 0, 0);
-          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-          endDate.setHours(23, 59, 59, 999);
+          startDate = new Date(Date.UTC(currentYear, currentMonth, 1));
+          startDate.setUTCHours(0, 0, 0, 0);
+          endDate = new Date(Date.UTC(currentYear, currentMonth + 1, 0));
+          endDate.setUTCHours(23, 59, 59, 999);
         }
         break;
       default:
@@ -587,10 +604,39 @@ const Dashboard = () => {
   };
 
   // Update the date input handlers to use UTC
+  // Safely format a Date for a <input type="date"> value, falling back to
+  // an empty string for invalid dates instead of throwing.
+  const toDateInputValue = (date: Date) => {
+    if (!date || isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  };
+
+  // Mirror committed filter dates into the input strings (preset buttons,
+  // initial load). User typing flows the other way via handleDateInputChange.
+  useEffect(() => {
+    setStartInput(toDateInputValue(dateFilter.startDate));
+    setEndInput(toDateInputValue(dateFilter.endDate));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter.startDate, dateFilter.endDate]);
+
   const handleDateInputChange = (date: string, isStart: boolean) => {
+    // Keep the input responsive: store the raw string immediately so the
+    // native control never has its caret reset mid-edit.
+    if (isStart) {
+      setStartInput(date);
+    } else {
+      setEndInput(date);
+    }
+
     const [year, month, day] = date.split('-').map(Number);
     const newDate = new Date(Date.UTC(year, month - 1, day));
-    
+
+    // Native date inputs can emit an empty/partial value while editing, or a
+    // not-yet-sensible year. Only commit once we have a real, plausible date.
+    if (isNaN(newDate.getTime()) || year < 1970 || year > 9999) {
+      return;
+    }
+
     if (isStart) {
       newDate.setUTCHours(0, 0, 0, 0);
       updateDateFilter('custom', newDate, dateFilter.endDate);
@@ -796,46 +842,147 @@ const Dashboard = () => {
     };
   };
 
-  // Calculate Current MRR (Monthly Recurring Revenue)
-  const calculateCurrentMRR = () => {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-    // Use original items without date filter for MRR
-    return getFilteredBillableItems()
-      .filter(item => 
-        item.type === 'LICENSE' &&
-        item.invoice_date &&
-        new Date(item.invoice_date) >= start &&
-        new Date(item.invoice_date) <= end &&
-        ['RAISED', 'RECEIVED'].includes(item.status)
-      )
-      .reduce((sum, item) => {
-        const startDate = new Date(item.start_date);
-        const endDate = new Date(item.end_date);
-        const monthsDiff = (endDate.getFullYear() - startDate.getFullYear()) * 12 + 
-          (endDate.getMonth() - startDate.getMonth()) + 1;
-
-        const monthlyAmount = item.amount / monthsDiff;
-        return sum + monthlyAmount;
-      }, 0);
+  // A project counts toward recurring revenue only if both the project and its
+  // client are active (inactive ones stop counting from their inactivation).
+  const isProjectActive = (projectId: number): boolean => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return false;
+    if (proj.is_active === false) return false;
+    const client = clients.find(c => c.id === proj.client_id);
+    if (client && client.is_active === false) return false;
+    return true;
   };
 
-  // Calculate Current NRR (Net Revenue Run Rate)
-  const calculateCurrentNRR = () => {
-    const mrr = calculateCurrentMRR();
-    // Use original items without date filter for one-time revenue in NRR calculation
-    const onetime = {
-      raised: getFilteredBillableItems()
-        .filter(item => item.type === 'ONE_TIME' && item.status === 'RAISED')
-        .reduce((sum, item) => sum + item.amount, 0),
-      received: getFilteredBillableItems()
-        .filter(item => item.type === 'ONE_TIME' && item.status === 'RECEIVED')
-        .reduce((sum, item) => sum + item.amount, 0)
+  // The license items that make up each active project's CURRENT recurring
+  // commitment. Per project we anchor on the latest-starting license, then keep
+  // every license whose period OVERLAPS that anchor. This:
+  //  • sums concurrent streams (e.g. Motul's 12-mo platform + 9-mo software),
+  //  • excludes ended sequential periods (an old server license that finished),
+  //  • stays stable across the monthly gap (uses the latest period, not "today",
+  //    so a monthly client doesn't vanish before its next invoice is raised).
+  const getCurrentlyActiveLicenseItems = (): BillableItem[] => {
+    const lic = getFilteredBillableItems()
+      .filter(item => item.type === 'LICENSE')
+      .filter(item => ['RAISED', 'RECEIVED'].includes(item.status))
+      .filter(item => item.start_date && item.end_date)
+      .filter(item => isProjectActive(item.project_id));
+
+    const byProject: Record<number, BillableItem[]> = {};
+    lic.forEach(item => { (byProject[item.project_id] ||= []).push(item); });
+
+    const result: BillableItem[] = [];
+    Object.values(byProject).forEach(items => {
+      const anchor = [...items].sort(
+        (a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+      )[0];
+      const aStart = new Date(anchor.start_date).getTime();
+      const aEnd = new Date(anchor.end_date!).getTime();
+      items.forEach(it => {
+        const s = new Date(it.start_date).getTime();
+        const e = new Date(it.end_date!).getTime();
+        if (s <= aEnd && e >= aStart) result.push(it); // overlaps the current window
+      });
+    });
+    return result;
+  };
+
+  // MRR = sum over all currently-active license items of (amount ÷ months it
+  // covers). The day-span month count handles multi-month single invoices
+  // (e.g. an Apr–Jul license = ₹X ÷ 4) and mid-month periods.
+  const calculateCurrentMRR = () => {
+    return getCurrentlyActiveLicenseItems().reduce((total, item) => {
+      const s = new Date(item.start_date);
+      const e = new Date(item.end_date!);
+      const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+      const months = Math.max(1, Math.round(days / 30.44));
+      return total + item.amount / months;
+    }, 0);
+  };
+
+  // Projected revenue for the current financial year (Apr–Mar):
+  // each license contributes monthlyAmount × the months remaining in the FY from
+  // when it started (a license starting in April → ×12; in June → ×10; one that
+  // started before this FY → ×12). Plus avg one-time per month × 12.
+  const calculateProjectedRevenue = () => {
+    const now = new Date();
+    const fyStartYear = now.getMonth() <= 2 ? now.getFullYear() - 1 : now.getFullYear();
+
+    // Monthly run-rate = amount spread over the months the invoice covers (day span).
+    const monthlyOf = (item: BillableItem): number => {
+      const s = new Date(item.start_date);
+      const e = new Date(item.end_date || item.start_date);
+      const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+      const months = Math.max(1, Math.round(days / 30.44));
+      return item.amount / months;
     };
-    const onetimeMonthly = (onetime.raised + onetime.received) / 12;
-    return mrr + onetimeMonthly;
+
+    // Group license items by project.
+    const byProject: Record<number, BillableItem[]> = {};
+    billableItems
+      .filter(i => i.type === 'LICENSE')
+      .forEach(i => { (byProject[i.project_id] ||= []).push(i); });
+
+    let annualRecurring = 0;
+    Object.entries(byProject).forEach(([projectId, items]) => {
+      if (!isProjectActive(Number(projectId))) return; // active clients/projects only
+      const latest = [...items].sort(
+        (a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+      )[0];
+      const first = [...items].sort(
+        (a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+      )[0];
+      const monthly = monthlyOf(latest);
+
+      const startDt = new Date(first.invoice_date || first.start_date);
+      const startFY = startDt.getMonth() <= 2 ? startDt.getFullYear() - 1 : startDt.getFullYear();
+      let remaining: number;
+      if (startFY < fyStartYear) remaining = 12;          // active before this FY → full year
+      else if (startFY > fyStartYear) remaining = 0;       // starts in a future FY
+      else remaining = 13 - (((startDt.getMonth() - 3 + 12) % 12) + 1); // Apr→12, Jun→10…
+
+      annualRecurring += monthly * remaining;
+    });
+
+    // Average one-time per month (active clients/projects only), annualized.
+    const oneTime = billableItems.filter(
+      i => i.type === 'ONE_TIME' && (i.status === 'RAISED' || i.status === 'RECEIVED') && isProjectActive(i.project_id)
+    );
+    const totalOneTime = oneTime.reduce((sum, i) => sum + i.amount, 0);
+    const monthsWithOneTime = new Set(
+      oneTime.map(i => (i.invoice_date || i.start_date || '').slice(0, 7)).filter(Boolean)
+    ).size;
+    const avgOneTimePerMonth = monthsWithOneTime > 0 ? totalOneTime / monthsWithOneTime : 0;
+    const annualOneTime = avgOneTimePerMonth * 12;
+
+    return {
+      annualRecurring,
+      avgOneTimePerMonth,
+      annualOneTime,
+      projected: annualRecurring + annualOneTime,
+    };
+  };
+
+  // Average MRR per recurring project (the "average ticket size"): current MRR
+  // divided by the number of distinct projects with a currently-active license.
+  const calculateAvgMrrPerProject = () => {
+    const mrr = calculateCurrentMRR();
+    const projectCount = new Set(getCurrentlyActiveLicenseItems().map(i => i.project_id)).size;
+    return { mrr, projectCount, avg: projectCount > 0 ? mrr / projectCount : 0 };
+  };
+
+  // Count of pending invoices (raised but not yet received) grouped by project.
+  const calculatePendingInvoices = () => {
+    const byProject = projects
+      .map(project => ({
+        project,
+        count: billableItems.filter(
+          item => item.project_id === project.id && item.status === 'RAISED'
+        ).length,
+      }))
+      .filter(entry => entry.count > 0)
+      .sort((a, b) => b.count - a.count);
+    const total = byProject.reduce((sum, entry) => sum + entry.count, 0);
+    return { total, byProject };
   };
 
   // Calculate Average Invoice Collection Time
@@ -919,16 +1066,117 @@ const Dashboard = () => {
 
   // Get monthly revenue based on type
   const getMonthlyRevenue = (type: RevenueType, year: number, month: number) => {
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0);
+
     switch (type) {
       case 'MRR':
-        return calculateMonthlyMRR(billableItems, year, month);
+        // Get all license items that were active in this month and respect the date filter
+        const licenseItems = getFilteredBillableItems()
+          .filter(item => {
+            const isLicense = item.type === 'LICENSE';
+            const startDateValid = new Date(item.start_date) <= end;
+            // End date should be null or after the end of the month
+            const endDateValid = !item.end_date || new Date(item.end_date) > end;
+            const statusValid = ['RAISED', 'RECEIVED'].includes(item.status);
+            
+            return isLicense && startDateValid && endDateValid && statusValid;
+          });
+
+        // Calculate MRR based on billing frequency
+        const mrrDetails = licenseItems.map(item => {
+          let monthlyAmount = 0;
+          
+          switch (item.billing_frequency) {
+            case 'MONTHLY':
+              monthlyAmount = item.amount;
+              break;
+            case 'QUARTERLY':
+              monthlyAmount = item.amount / 3;
+              break;
+            case 'HALF_YEARLY':
+              monthlyAmount = item.amount / 6;
+              break;
+            case 'YEARLY':
+              monthlyAmount = item.amount / 12;
+              break;
+            case 'CUSTOM':
+              if (item.custom_interval_days) {
+                monthlyAmount = (item.amount * 30) / item.custom_interval_days;
+              }
+              break;
+            default:
+              monthlyAmount = item.amount;
+          }
+
+          return {
+            name: item.name,
+            amount: item.amount,
+            frequency: item.billing_frequency || 'DEFAULT',
+            monthlyAmount
+          };
+        });
+
+        mrrDetails.forEach(detail => {
+        });
+
+        const totalMRR = mrrDetails.reduce((sum, detail) => sum + detail.monthlyAmount, 0);
+        return totalMRR;
+
       case 'ONE_TIME':
-        return calculateMonthlyOneTimeRevenue(year, month);
+        const oneTimeItems = getFilteredBillableItems()
+          .filter(item => 
+            item.type === 'ONE_TIME' &&
+            item.invoice_date &&
+            new Date(item.invoice_date) >= start &&
+            new Date(item.invoice_date) <= end &&
+            ['RAISED', 'RECEIVED'].includes(item.status)
+          );
+        
+        const oneTimeTotal = oneTimeItems.reduce((sum, item) => sum + item.amount, 0);
+        console.log(`\nOne-time revenue items: ${oneTimeItems.length}`);
+        oneTimeItems.forEach(item => console.log(`${item.name}: ${item.amount}`));
+        console.log(`Total one-time revenue: ${oneTimeTotal.toFixed(2)}`);
+        return oneTimeTotal;
+
       case 'OTHERS':
-        return calculateMonthlyOthersRevenue(year, month);
+        const otherItems = getFilteredBillableItems()
+          .filter(item => 
+            item.type === 'OTHERS' &&
+            item.invoice_date &&
+            new Date(item.invoice_date) >= start &&
+            new Date(item.invoice_date) <= end &&
+            ['RAISED', 'RECEIVED'].includes(item.status)
+          );
+        
+        const othersTotal = otherItems.reduce((sum, item) => sum + item.amount, 0);
+        console.log(`\nOther revenue items: ${otherItems.length}`);
+        otherItems.forEach(item => console.log(`${item.name}: ${item.amount}`));
+        console.log(`Total other revenue: ${othersTotal.toFixed(2)}`);
+        return othersTotal;
+
       default:
         return 0;
     }
+  };
+
+  // Get months for the graph based on date filter
+  const getMonthsForGraph = () => {
+    const months = [];
+    const start = new Date(dateFilter.startDate);
+    const end = new Date(dateFilter.endDate);
+    
+    let current = new Date(start);
+    while (current <= end) {
+      months.push({
+        label: current.toLocaleString('default', { month: 'short' }),
+        year: current.getFullYear(),
+        month: current.getMonth()
+      });
+      current.setMonth(current.getMonth() + 1);
+    }
+    
+    return months;
   };
 
   // Handle date filter change
@@ -1036,14 +1284,14 @@ const Dashboard = () => {
             <input
               type="date"
               className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-              value={dateFilter.startDate.toISOString().split('T')[0]}
+              value={startInput}
               onChange={(e) => handleDateInputChange(e.target.value, true)}
             />
             <span className="mx-2">to</span>
             <input
               type="date"
               className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-              value={dateFilter.endDate.toISOString().split('T')[0]}
+              value={endInput}
               onChange={(e) => handleDateInputChange(e.target.value, false)}
             />
           </div>
@@ -1101,16 +1349,16 @@ const Dashboard = () => {
           </div>
           <h3 className="text-sm font-medium text-emerald-600">Annual Recurring Revenue</h3>
           <p className="mt-2 text-3xl font-semibold text-gray-900">
-            {formatCurrency(calculateLicenseRevenue().raised + calculateLicenseRevenue().received)}
+            {formatCurrency(calculateCurrentMRR() * 12)}
           </p>
           <div className="mt-4 space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-emerald-700">Raised</span>
-              <span className="text-sm font-medium text-emerald-800">{formatCurrency(calculateLicenseRevenue().raised)}</span>
+              <span className="text-sm text-emerald-700">MRR</span>
+              <span className="text-sm font-medium text-emerald-800">{formatCurrency(calculateCurrentMRR())}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-emerald-700">Received</span>
-              <span className="text-sm font-medium text-emerald-800">{formatCurrency(calculateLicenseRevenue().received)}</span>
+              <span className="text-sm text-emerald-700">Annualized</span>
+              <span className="text-sm font-medium text-emerald-800">MRR × 12</span>
             </div>
           </div>
         </div>
@@ -1129,6 +1377,27 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Projected Annual Revenue */}
+        <div className="bg-gradient-to-br from-violet-50 to-violet-100 shadow-sm ring-1 ring-violet-200 rounded-lg p-6 relative overflow-hidden">
+          <div className="absolute right-0 top-0 mt-4 mr-4 text-violet-400">
+            <TrendingUp size={24} />
+          </div>
+          <h3 className="text-sm font-medium text-violet-600">Projected Revenue (FY)</h3>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">
+            {formatCurrency(calculateProjectedRevenue().projected)}
+          </p>
+          <div className="mt-4 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-violet-700">Recurring (prorated)</span>
+              <span className="text-sm font-medium text-violet-800">{formatCurrency(calculateProjectedRevenue().annualRecurring)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-violet-700">One-time (avg/mo×12)</span>
+              <span className="text-sm font-medium text-violet-800">{formatCurrency(calculateProjectedRevenue().annualOneTime)}</span>
+            </div>
+          </div>
+        </div>
+
         {/* 5. Outstanding Amount */}
         <div className="bg-gradient-to-br from-amber-50 to-amber-100 shadow-sm ring-1 ring-amber-200 rounded-lg p-6 relative overflow-hidden">
           <div className="absolute right-0 top-0 mt-4 mr-4 text-amber-400">
@@ -1143,483 +1412,77 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* 6. Net Revenue Run Rate */}
-        <div className="bg-gradient-to-br from-pink-50 to-pink-100 shadow-sm ring-1 ring-pink-200 rounded-lg p-6 relative overflow-hidden">
-          <div className="absolute right-0 top-0 mt-4 mr-4 text-pink-400">
-            <ArrowUpRight size={24} />
-          </div>
-          <h3 className="text-sm font-medium text-pink-600">Net Revenue Run Rate</h3>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">
-            {formatCurrency(calculateCurrentNRR())}
-          </p>
-          <div className="mt-4">
-            <span className="text-sm text-pink-700">Annualized Revenue</span>
-          </div>
-        </div>
-
-        {/* 7. Average Collection Time */}
-        <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 shadow-sm ring-1 ring-cyan-200 rounded-lg p-6 relative overflow-hidden">
-          <div className="absolute right-0 top-0 mt-4 mr-4 text-cyan-400">
+        {/* 7. Pending Invoices (awaiting payment) by project */}
+        <div className="bg-gradient-to-br from-rose-50 to-rose-100 shadow-sm ring-1 ring-rose-200 rounded-lg p-6 relative overflow-hidden">
+          <div className="absolute right-0 top-0 mt-4 mr-4 text-rose-400">
             <Clock size={24} />
           </div>
-          <h3 className="text-sm font-medium text-cyan-600">Avg. Collection Time</h3>
+          <h3 className="text-sm font-medium text-rose-600">Pending Invoices</h3>
           <p className="mt-2 text-3xl font-semibold text-gray-900">
-            {calculateAvgCollectionTime()} days
+            {calculatePendingInvoices().total}
           </p>
-          <div className="mt-4">
-            <span className="text-sm text-cyan-700">Invoice to Payment</span>
+          <div className="mt-4 space-y-2">
+            {calculatePendingInvoices().byProject.length > 0 ? (
+              calculatePendingInvoices().byProject.slice(0, 4).map(({ project, count }) => (
+                <div key={project.id} className="flex items-center justify-between">
+                  <span className="text-sm text-rose-700 truncate max-w-[150px]">{project.name}</span>
+                  <span className="text-sm font-semibold text-rose-900">{count}</span>
+                </div>
+              ))
+            ) : (
+              <span className="text-sm text-rose-700">All settled — none awaiting payment</span>
+            )}
           </div>
         </div>
 
-        {/* 8. Top Customers */}
-        <div className="bg-gradient-to-br from-teal-50 to-teal-100 shadow-sm ring-1 ring-teal-200 rounded-lg p-6 relative overflow-hidden">
-          <div className="absolute right-0 top-0 mt-4 mr-4 text-teal-400">
-            <Building2 size={24} />
+        {/* 8. Average MRR per Client (average ticket size) */}
+        <div className="bg-gradient-to-br from-sky-50 to-sky-100 shadow-sm ring-1 ring-sky-200 rounded-lg p-6 relative overflow-hidden">
+          <div className="absolute right-0 top-0 mt-4 mr-4 text-sky-400">
+            <Users size={24} />
           </div>
-          <h3 className="text-sm font-medium text-teal-600">Top Customers</h3>
-          <div className="mt-6">
-            {calculateTopCustomers().map((item, index) => (
-              <div 
-                key={`${item.client.id}-${index}`}
-                className="group flex items-center justify-between mb-4 last:mb-0"
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`
-                    flex-none w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-                    ${index === 0 ? 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200' : 
-                      index === 1 ? 'bg-slate-100 text-slate-600 ring-1 ring-slate-200' :
-                      index === 2 ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' :
-                      'bg-white/50 text-teal-600 ring-1 ring-teal-100'}
-                  `}>
-                    {index + 1}
-                  </div>
-                  <div className="truncate">
-                    <p className="text-sm font-medium text-gray-700 truncate max-w-[140px]">
-                      {item.client.legal_name}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-gray-900">
-                    {formatShortCurrency(item.revenue)}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* MRR Section */}
-      <div className="mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">Monthly Recurring Revenue (MRR)</h2>
-
-        {/* MRR Graph */}
-        <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6 mb-6">
-          <div className="flex flex-col space-y-6">
+          <h3 className="text-sm font-medium text-sky-600">Avg. MRR / Project</h3>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">
+            {formatCurrency(calculateAvgMrrPerProject().avg)}
+          </p>
+          <div className="mt-4 space-y-1">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900">Revenue Trend (FY 2024-25)</h3>
-              <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setSelectedRevenueType('MRR')}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    selectedRevenueType === 'MRR'
-                      ? 'bg-indigo-500 text-white'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  MRR
-                </button>
-                <button
-                  onClick={() => setSelectedRevenueType('ONE_TIME')}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    selectedRevenueType === 'ONE_TIME'
-                      ? 'bg-purple-500 text-white'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  One Time
-                </button>
-                <button
-                  onClick={() => setSelectedRevenueType('OTHERS')}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    selectedRevenueType === 'OTHERS'
-                      ? 'bg-teal-500 text-white'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Others
-                </button>
-              </div>
+              <span className="text-sm text-sky-700">Total MRR</span>
+              <span className="text-sm font-medium text-sky-800">{formatCurrency(calculateAvgMrrPerProject().mrr)}</span>
             </div>
-            <div className="h-80">
-              {selectedRevenueType === 'ONE_TIME' ? (
-                <Bar
-                  data={{
-                    labels: ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
-                    datasets: [
-                      {
-                        label: selectedRevenueType,
-                        data: Array.from({ length: 12 }, (_, i) => {
-                          const year = 2024;
-                          const month = i + 3; // Convert to actual month (0-11)
-                          return getMonthlyRevenue(selectedRevenueType, year, month);
-                        }),
-                        backgroundColor: 'rgba(147, 51, 234, 0.8)',
-                        borderColor: 'rgb(147, 51, 234)',
-                        borderWidth: 1,
-                      }
-                    ]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: {
-                          callback: (value) => `₹${(value as number).toLocaleString('en-IN')}`
-                        }
-                      }
-                    },
-                    plugins: {
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `${selectedRevenueType}: ₹${context.parsed.y.toLocaleString('en-IN')}`
-                        }
-                      },
-                      title: {
-                        display: true,
-                        text: 'One Time Revenue Trend'
-                      }
-                    }
-                  }}
-                />
-              ) : (
-              <Line
-                data={{
-                  labels: ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'],
-                  datasets: [
-                    {
-                      label: selectedRevenueType,
-                      data: Array.from({ length: 12 }, (_, i) => {
-                        const year = 2024;
-                        const month = i + 3; // Convert to actual month (0-11)
-                        return getMonthlyRevenue(selectedRevenueType, year, month);
-                      }),
-                      borderColor: selectedRevenueType === 'MRR' 
-                        ? 'rgb(79, 70, 229)' 
-                          : 'rgb(20, 184, 166)',
-                      backgroundColor: selectedRevenueType === 'MRR'
-                        ? 'rgba(79, 70, 229, 0.1)'
-                          : 'rgba(20, 184, 166, 0.1)',
-                      fill: true,
-                      tension: 0.4,
-                    }
-                  ]
-                }}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  scales: {
-                    y: {
-                      beginAtZero: true,
-                      ticks: {
-                        callback: (value) => `₹${(value as number).toLocaleString('en-IN')}`
-                      }
-                    }
-                  },
-                  plugins: {
-                    tooltip: {
-                      callbacks: {
-                        label: (context) => `${selectedRevenueType}: ₹${context.parsed.y.toLocaleString('en-IN')}`
-                      }
-                    },
-                    title: {
-                      display: true,
-                        text: `${selectedRevenueType === 'MRR' ? 'Monthly Recurring Revenue' : 'Other Revenue'} Trend`
-                    }
-                  }
-                }}
-              />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Project-wise MRR */}
-        <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-medium text-gray-900">Project-wise MRR</h3>
-            <Link to="/projects" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-              View All
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Project</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
-                  <th className="px-6 py-3 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">MRR</th>
-                  <th className="px-6 py-3 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Next Renewal</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {projects
-                  .map(project => {
-                    const projectMRR = calculateProjectMRR(billableItems, project.id);
-                    
-                    // Get all LICENSE items for this project
-                    const licenseItems = billableItems.filter(item => 
-                      item.type === 'LICENSE' &&
-                      item.project_id === project.id &&
-                      ['RAISED', 'RECEIVED'].includes(item.status)
-                    );
-                    
-                    // Find the latest end date
-                    const latestEndDate = licenseItems.length > 0 
-                      ? Math.max(...licenseItems.map(item => new Date(item.end_date).getTime()))
-                      : null;
-                    
-                    // Calculate days until renewal
-                    const today = new Date();
-                    const daysUntilRenewal = latestEndDate 
-                      ? Math.ceil((latestEndDate - today.getTime()) / (1000 * 60 * 60 * 24))
-                      : null;
-
-                    // Debug logging for ICICI projects
-                    if (project.name.includes('ICICI')) {
-                      console.log('Project:', project.name);
-                      console.log('Project ID:', project.id);
-                      console.log('MRR:', projectMRR);
-                      console.log('Latest End Date:', new Date(latestEndDate!).toISOString());
-                      console.log('Days Until Renewal:', daysUntilRenewal);
-                      console.log('License Items:', licenseItems);
-                    }
-
-                    return {
-                      project,
-                      mrr: projectMRR,
-                      daysUntilRenewal
-                    };
-                  })
-                  .filter(({ mrr }) => mrr > 0) // Remove projects with zero MRR
-                  .sort((a, b) => b.mrr - a.mrr)
-                  .slice(0, 10)
-                  .map(({ project, mrr, daysUntilRenewal }) => {
-                    const client = clients.find(c => c.id === project.client_id);
-                    return (
-                      <tr key={project.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {project.name}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {client?.legal_name}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                          {formatCurrency(mrr)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            daysUntilRenewal === null ? 'bg-gray-100 text-gray-800' :
-                            daysUntilRenewal < 0 ? 'bg-red-100 text-red-800' :
-                            daysUntilRenewal <= 30 ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-green-100 text-green-800'
-                          }`}>
-                            {daysUntilRenewal === null ? 'No License' :
-                             daysUntilRenewal < 0 ? 'Expired' :
-                             `${daysUntilRenewal} days`}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Team-wise MRR */}
-        <div className="bg-white shadow-sm ring-1 ring-gray-200 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-medium text-gray-900">Team-wise Revenue</h3>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-4">
-                <select
-                  className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-                  value={teamDateFilter.type}
-                  onChange={(e) => handleTeamDateFilterChange(e.target.value as 'fy' | 'quarter' | 'month' | 'custom')}
-                >
-                  <option value="fy">Current FY</option>
-                  <option value="quarter">Current Quarter</option>
-                  <option value="month">Current Month</option>
-                  <option value="custom">Custom Range</option>
-                </select>
-                <div className="relative">
-                  <button
-                    onClick={() => setShowDepartmentDropdown(prev => !prev)}
-                    className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex items-center gap-2"
-                  >
-                    {selectedDepartments.length === 0 ? 'All Departments' : `${selectedDepartments.length} Selected`}
-                    <ChevronDown size={16} className={`transform transition-transform ${showDepartmentDropdown ? 'rotate-180' : ''}`} />
-                  </button>
-                  {showDepartmentDropdown && (
-                    <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 z-10">
-                      <div className="py-1">
-                        <label className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            checked={selectedDepartments.length === 0}
-                            onChange={() => {
-                              setSelectedDepartments([]);
-                              setCurrentPage(0);
-                            }}
-                          />
-                          <span className="ml-2">All</span>
-                        </label>
-                        {['Sales', 'Operations', 'CX'].map(dept => (
-                          <label key={dept} className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              checked={selectedDepartments.includes(dept)}
-                              onChange={() => {
-                                setSelectedDepartments(prev => {
-                                  const newSelection = prev.includes(dept)
-                                    ? prev.filter(d => d !== dept)
-                                    : [...prev, dept];
-                                  return newSelection;
-                                });
-                                setCurrentPage(0);
-                              }}
-                            />
-                            <span className="ml-2">{dept}</span>
-                          </label>
-                ))}
-            </div>
-                    </div>
-                  )}
-                    </div>
-                {teamDateFilter.type === 'custom' && (
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">From:</span>
-                      <input
-                        type="date"
-                        className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-                        value={teamDateFilter.startDate.toISOString().split('T')[0]}
-                        onChange={(e) => handleTeamDateFilterChange('custom', new Date(e.target.value), teamDateFilter.endDate)}
-                      />
-                  </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">To:</span>
-                      <input
-                        type="date"
-                        className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-                        value={teamDateFilter.endDate.toISOString().split('T')[0]}
-                        onChange={(e) => handleTeamDateFilterChange('custom', teamDateFilter.startDate, new Date(e.target.value))}
-                      />
-            </div>
-                    </div>
-                )}
-                    </div>
-                  </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th 
-                    className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('name')}
-                  >
-                    Name {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th 
-                    className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('department')}
-                  >
-                    Department {sortField === 'department' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th 
-                    className="px-6 py-3 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('license')}
-                  >
-                    License {sortField === 'license' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th 
-                    className="px-6 py-3 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('onetime')}
-                  >
-                    One Time {sortField === 'onetime' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th 
-                    className="px-6 py-3 bg-gray-50 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedEmployees.map((employee) => (
-                  <tr key={`${employee.name}-${employee.department}`} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {employee.name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        employee.department === 'Sales' 
-                          ? 'bg-blue-100 text-blue-800'
-                          : employee.department === 'Operations'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-purple-100 text-purple-800'
-                      }`}>
-                        {employee.department}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {formatCurrency(employee.licenseAmount)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {formatCurrency(employee.oneTimeAmount)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                      {formatCurrency(employee.licenseAmount + employee.oneTimeAmount)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {/* Pagination */}
-          <div className="flex items-center justify-end mt-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-700">
-                Page {currentPage + 1} of {Math.ceil(employeeStats.length / itemsPerPage)}
-              </span>
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
-                disabled={currentPage === 0}
-                className="p-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ArrowLeft size={16} />
-              </button>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(Math.ceil(employeeStats.length / itemsPerPage) - 1, prev + 1))}
-                disabled={currentPage >= Math.ceil(employeeStats.length / itemsPerPage) - 1}
-                className="p-2 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ArrowRight size={16} />
-              </button>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-sky-700">Recurring projects</span>
+              <span className="text-sm font-medium text-sky-800">{calculateAvgMrrPerProject().projectCount}</span>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Next due license invoices — actionable */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-6">Next Due Invoices</h2>
+        <NextDueInvoices projects={projects} clients={clients} billableItems={billableItems} />
+      </div>
+
+      {/* Accounts receivable aging */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-6">Accounts Receivable</h2>
+        <ReceivablesAging projects={projects} clients={clients} billableItems={billableItems} />
+      </div>
+
+      {/* License invoicing & payments Gantt */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-6">License Projects — Invoicing &amp; Payments</h2>
+        <LicenseGantt projects={projects} clients={clients} billableItems={billableItems} />
+      </div>
+
+      {/* One-time invoicing & payments chart */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-6">One-Time Revenue — Invoicing &amp; Payments</h2>
+        <OneTimeChart projects={projects} clients={clients} billableItems={billableItems} />
+      </div>
+
     </div>
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

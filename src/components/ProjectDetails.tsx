@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download, Edit } from 'lucide-react';
-import type { Project, Client, BillableItem, BillableType, BillableStatus, PurchaseOrder } from '../types';
-import { getProjects, getBillableItems, saveProject, updateBillableItem, deleteBillableItem, uploadDocument } from '../lib/storage';
-import { getPurchaseOrders, savePurchaseOrder, deletePurchaseOrder, updatePurchaseOrder } from '../lib/purchaseOrders';
+import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download, Edit, Receipt } from 'lucide-react';
+import type { Project, Client, BillableItem, BillableType, BillableStatus, PurchaseOrder, BillableLineItem } from '../types';
+import LineItemsEditor from './LineItemsEditor';
+import { getProjects, getBillableItemsByProject, saveProject, updateBillableItem, deleteBillableItem, uploadDocument, getPurchaseOrders, savePurchaseOrder, deletePurchaseOrder, updatePurchaseOrder, deleteProject } from '../lib/storage';
 import { getClients } from '../lib/clients';
 import { handleDocumentClick } from '../utils/documentUtils';
+import { pdf } from '@react-pdf/renderer';
+import InvoiceDocument from './InvoiceDocument';
+import { buildInvoiceData } from '../lib/invoiceData';
+import { getBank } from '../lib/invoiceConfig';
+import { logAudit } from '../lib/audit';
 
 interface ProjectInfoProps {
   project: Project;
@@ -89,6 +94,26 @@ const ProjectInfo: React.FC<ProjectInfoProps> = ({ project, onSave, client }) =>
               onChange={(e) => setFormData(prev => ({ ...prev, spoc_mobile: e.target.value }))}
               className="form-input mt-1 w-full"
             />
+          </div>
+          <div>
+            <label htmlFor="mrr" className="block text-sm font-medium text-gray-700">
+              Monthly Recurring Revenue (MRR) <span className="text-red-500">*</span>
+            </label>
+            <div className="mt-1 relative rounded-md shadow-sm">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-500 sm:text-sm">₹</span>
+              </div>
+              <input
+                type="number"
+                id="mrr"
+                value={formData.mrr}
+                onChange={(e) => setFormData(prev => ({ ...prev, mrr: parseFloat(e.target.value) }))}
+                className="form-input pl-7 w-full"
+                min="0"
+                step="0.01"
+                required
+              />
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -214,8 +239,30 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
   const [proposalDocument, setProposalDocument] = useState<File | null>(null);
   const [invoiceDocument, setInvoiceDocument] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lineItems, setLineItems] = useState<BillableLineItem[]>(
+    item.line_items?.length ? item.line_items : [{ description: item.name, amount: item.amount }]
+  );
+
+  // Keep name + amount (the totals) in sync with the line items (qty × rate wins).
+  useEffect(() => {
+    const clean = lineItems
+      .filter(li => li.description.trim() || li.amount || li.quantity || li.rate)
+      .map(li => ({
+        ...li,
+        amount: li.quantity && li.rate
+          ? Math.round(Number(li.quantity) * Number(li.rate) * 100) / 100
+          : Number(li.amount) || 0,
+      }));
+    const total = clean.reduce((s, li) => s + li.amount, 0);
+    const name = clean.length === 1
+      ? clean[0].description
+      : clean.map(li => li.description).filter(Boolean).join(' + ');
+    setFormData(prev => ({ ...prev, name: name || prev.name, amount: total, line_items: clean.length ? clean : undefined }));
+  }, [lineItems]);
 
   const adminUsers = ['Vraj Sheth', 'Sanuj Philip'];
+  const BILLING_FREQUENCIES = ['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY', 'CUSTOM'] as const;
+  type BillingFrequency = typeof BILLING_FREQUENCIES[number];
 
   // Calculate available POs with utilization left
   const availablePOs = purchaseOrders.filter(po => {
@@ -286,10 +333,9 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
           setLoading(false);
           return;
         }
-        
-        // Check for invoice document
+        // The invoice document must be attached (uploaded, or already present).
         if (!formData.invoice_document_url && !invoiceDocument) {
-          alert('Please upload an invoice document');
+          alert('Please attach the invoice document (upload it below) before marking it RAISED/RECEIVED.');
           setLoading(false);
           return;
         }
@@ -302,12 +348,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
         return;
       }
 
-      await onSave(
-        formData,
-        poDocument || undefined,
-        proposalDocument || undefined,
-        invoiceDocument || undefined
-      );
+      await onSave(formData, poDocument || undefined, proposalDocument || undefined, invoiceDocument || undefined);
       onClose();
     } catch (error) {
       console.error('Failed to save item:', error);
@@ -329,30 +370,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
     }
   };
 
-  const handleCreateInvoice = async () => {
-    setLoading(true);
-    try {
-      // Validate required fields for invoice creation
-      if (!formData.invoice_number || !formData.invoice_date || !formData.invoice_raised_by) {
-        alert('Please fill in all required fields (Invoice Number, Invoice Date, and Invoice Raised By)');
-        setLoading(false);
-        return;
-      }
 
-      // Update the item with new status
-      const updatedData = { 
-        ...formData, 
-        status: 'RAISED' as BillableStatus,
-      };
-
-      await onSave(updatedData);
-      onClose();
-    } catch (error) {
-      console.error('Failed to update invoice status:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center overflow-y-auto">
@@ -373,19 +391,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
 
         <form onSubmit={handleSubmit} className="px-6 py-4 max-h-[calc(100vh-200px)] overflow-y-auto">
           <div className="space-y-6">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                Item Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="form-input mt-1 w-full"
-                required
-              />
-            </div>
+            <LineItemsEditor value={lineItems} onChange={setLineItems} />
 
             <div>
               <label htmlFor="type" className="block text-sm font-medium text-gray-700">
@@ -405,6 +411,54 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                 ))}
               </select>
             </div>
+
+            {formData.type === 'LICENSE' && (
+              <>
+                <div>
+                  <label htmlFor="billing_frequency" className="block text-sm font-medium text-gray-700">
+                    Billing Frequency <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="billing_frequency"
+                    value={formData.billing_frequency || 'MONTHLY'}
+                    onChange={(e) => setFormData(prev => ({ 
+                      ...prev, 
+                      billing_frequency: e.target.value as BillingFrequency,
+                      custom_interval_days: e.target.value === 'CUSTOM' ? prev.custom_interval_days : null
+                    }))}
+                    className="form-select mt-1 w-full"
+                    required
+                  >
+                    {BILLING_FREQUENCIES.map(freq => (
+                      <option key={freq} value={freq}>
+                        {freq.replace('_', ' ')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {formData.billing_frequency === 'CUSTOM' && (
+                  <div>
+                    <label htmlFor="custom_interval_days" className="block text-sm font-medium text-gray-700">
+                      Custom Interval (in days) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="custom_interval_days"
+                      value={formData.custom_interval_days || ''}
+                      onChange={(e) => setFormData(prev => ({ 
+                        ...prev, 
+                        custom_interval_days: e.target.value ? parseInt(e.target.value) : null 
+                      }))}
+                      required
+                      min="1"
+                      className="form-input mt-1 w-full"
+                      placeholder="Enter number of days"
+                    />
+                  </div>
+                )}
+              </>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -526,27 +580,6 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                   value={formData.end_date}
                   onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
                   className="form-input mt-1 w-full"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
-                Amount <span className="text-red-500">*</span>
-              </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">₹</span>
-                </div>
-                <input
-                  type="number"
-                  id="amount"
-                  value={formData.amount}
-                  onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
-                  className="form-input pl-7 w-full"
-                  min="0"
-                  step="0.01"
                   required
                 />
               </div>
@@ -716,13 +749,13 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                     onChange={(e) => setInvoiceDocument(e.target.files?.[0] || null)}
                     accept=".pdf,.doc,.docx"
                     className="form-input flex-1"
-                    required={
-                      (formData.status === 'RAISED' || formData.status === 'RECEIVED') &&
-                      !item.invoice_document_url
-                    }
                   />
                 </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Portal-generated invoice: download the PDF and upload it here. External/export invoice: upload your own file.
+                </p>
               </div>
+
             </div>
           </div>
         </form>
@@ -743,16 +776,6 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
               className="btn btn-primary"
             >
               {loading ? 'Sending...' : 'Send for Approval'}
-            </button>
-          )}
-          {formData.status === 'APPROVED' && (
-            <button
-              type="button"
-              onClick={handleCreateInvoice}
-              disabled={loading}
-              className="btn btn-primary"
-            >
-              {loading ? 'Creating...' : 'Create Invoice'}
             </button>
           )}
           <button
@@ -874,15 +897,14 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
               </label>
               <div className="flex items-center gap-4">
                 {po.po_document_url && (
-                  <a
-                    href={po.po_document_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => handleDocumentClick(po.po_document_url!)}
                     className="text-primary-600 hover:text-primary-900"
                     title="Download PO"
                   >
                     <Download className="h-4 w-4" />
-                  </a>
+                  </button>
                 )}
                 <input
                   type="file"
@@ -936,13 +958,34 @@ const ProjectDetails: React.FC = () => {
   const [poUtilization, setPOUtilization] = useState<{ [key: string]: number }>({});
   const [deletingPOId, setDeletingPOId] = useState<number | null>(null);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
+  const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
+  const [showDeactivateProject, setShowDeactivateProject] = useState(false);
+  const [projectInactiveDate, setProjectInactiveDate] = useState('');
+
+  // Toggle this project's active status (deactivating records an inactive date).
+  const setProjectActiveStatus = async (active: boolean, inactiveDate?: string) => {
+    if (!project) return;
+    try {
+      const updated = {
+        ...project,
+        is_active: active,
+        inactive_date: active ? null : (inactiveDate || null),
+      } as Project;
+      await saveProject(updated);
+      setProject(updated);
+      setShowDeactivateProject(false);
+    } catch (error) {
+      console.error('Failed to update project status:', error);
+      alert('Failed to update project status. See console for details.');
+    }
+  };
 
   const loadData = async () => {
     try {
       const projectId = parseInt(projectIdParam || '0', 10);
       const [projects, billableItems, clients, purchaseOrders] = await Promise.all([
         getProjects(),
-        getBillableItems(),
+        getBillableItemsByProject(projectId),
         getClients(),
         getPurchaseOrders(projectId)
       ]);
@@ -1021,7 +1064,11 @@ const ProjectDetails: React.FC = () => {
         invoice_document_url: invoiceDocumentUrl,
       };
 
+      const prevStatus = billableItems.find(i => i.id === itemToSave.id)?.status;
       await updateBillableItem(itemToSave.id, itemToSave);
+      if (prevStatus && prevStatus !== itemToSave.status) {
+        logAudit('Status changed', `${itemToSave.name}: ${prevStatus} → ${itemToSave.status}`, itemToSave.id);
+      }
       setBillableItems(billableItems.map(i => i.id === itemToSave.id ? itemToSave : i));
       setEditingItem(null);
     } catch (error) {
@@ -1036,6 +1083,36 @@ const ProjectDetails: React.FC = () => {
       setDeletingItemId(null);
     } catch (error) {
       console.error('Failed to delete billable item:', error);
+    }
+  };
+
+  // Download the invoice PDF using the bank the approver chose on the approval page.
+  const downloadInvoice = async (item: BillableItem) => {
+    if (!project || !client) return;
+    const bank = getBank(item.bank_account);
+    if (!bank) {
+      alert('No bank assigned yet. Approve this invoice (and pick a bank) on the Invoices → Approve tab first.');
+      return;
+    }
+    if (!item.invoice_number) {
+      alert('This invoice has no number yet. Approve it first to assign one.');
+      return;
+    }
+    try {
+      const data = buildInvoiceData(item, project, client, bank, item.invoice_number);
+      const blob = await pdf(<InvoiceDocument data={data} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${item.invoice_number}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      logAudit('Invoice generated', `${item.invoice_number} · ${client.legal_name}`, item.id);
+    } catch (error) {
+      console.error('Failed to generate invoice:', error);
+      alert('Failed to generate the invoice PDF. See console for details.');
     }
   };
 
@@ -1087,7 +1164,7 @@ const ProjectDetails: React.FC = () => {
 
   const handlePOEdit = async (poId: number, updates: Partial<PurchaseOrder>, newDocument?: File) => {
     try {
-      const updatedPO = await updatePurchaseOrder(poId, updates, newDocument);
+      const updatedPO = await updatePurchaseOrder({ ...updates, id: poId }, newDocument);
       setPurchaseOrders(purchaseOrders.map(po => po.id === poId ? updatedPO : po));
       setEditingPO(null);
     } catch (error) {
@@ -1176,6 +1253,27 @@ const ProjectDetails: React.FC = () => {
     return 'bg-primary-500';
   };
 
+  const handleDeleteProject = async () => {
+    if (!project) return;
+    
+    try {
+      // Delete all billable items associated with the project
+      const projectBillableItems = billableItems.filter(item => item.project_id === project.id);
+      await Promise.all(projectBillableItems.map(item => deleteBillableItem(item.id)));
+
+      // Delete all purchase orders associated with the project
+      const projectPOs = purchaseOrders.filter(po => po.project_id === project.id);
+      await Promise.all(projectPOs.map(po => deletePurchaseOrder(po.id)));
+
+      // Finally delete the project
+      await deleteProject(project.id);
+      navigate('/invoices');
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      alert('Failed to delete project. Please try again.');
+    }
+  };
+
   if (loading || !project || !client) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -1198,6 +1296,30 @@ const ProjectDetails: React.FC = () => {
           <h1 className="text-2xl font-semibold text-gray-900">
             Project Details
           </h1>
+        </div>
+        <div className="mt-4 md:mt-0 flex items-center gap-3">
+          <span className={`badge ${project.is_active === false ? 'bg-gray-100 ring-gray-200 text-gray-500' : 'bg-emerald-50 ring-emerald-200 text-emerald-700'}`}>
+            {project.is_active === false ? 'Inactive' : 'Active'}
+          </span>
+          {project.is_active === false ? (
+            <button onClick={() => setProjectActiveStatus(true)} className="btn btn-secondary">
+              Activate
+            </button>
+          ) : (
+            <button
+              onClick={() => { setProjectInactiveDate(new Date().toLocaleDateString('en-CA')); setShowDeactivateProject(true); }}
+              className="btn btn-secondary"
+            >
+              Deactivate
+            </button>
+          )}
+          <button
+            onClick={() => setShowDeleteProjectModal(true)}
+            className="btn btn-danger"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete Project
+          </button>
         </div>
       </div>
 
@@ -1461,15 +1583,23 @@ const ProjectDetails: React.FC = () => {
                             <td className="px-3 py-4">
                               <div className="flex items-center gap-2">
                                 {item.proposal_document_url && (
-                                  <a
-                                    href={item.proposal_document_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDocumentClick(item.proposal_document_url!)}
                                     className="text-primary-600 hover:text-primary-900"
                                     title="View Proposal"
                                   >
                                     <FileText className="h-4 w-4" />
-                                  </a>
+                                  </button>
+                                )}
+                                {item.bank_account && (
+                                  <button
+                                    onClick={() => downloadInvoice(item)}
+                                    className="text-blue-600 hover:text-blue-900"
+                                    title="Download Invoice"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </button>
                                 )}
                                 <button
                                   onClick={() => client.is_active ? setEditingItem(item) : null}
@@ -1556,15 +1686,23 @@ const ProjectDetails: React.FC = () => {
                             <td className="px-3 py-4">
                               <div className="flex items-center gap-2">
                                 {item.proposal_document_url && (
-                                  <a
-                                    href={item.proposal_document_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDocumentClick(item.proposal_document_url!)}
                                     className="text-primary-600 hover:text-primary-900"
                                     title="View Proposal"
                                   >
                                     <FileText className="h-4 w-4" />
-                                  </a>
+                                  </button>
+                                )}
+                                {item.bank_account && (
+                                  <button
+                                    onClick={() => downloadInvoice(item)}
+                                    className="text-blue-600 hover:text-blue-900"
+                                    title="Download Invoice"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </button>
                                 )}
                                 <button
                                   onClick={() => client.is_active ? setEditingItem(item) : null}
@@ -1934,6 +2072,65 @@ const ProjectDetails: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Delete Project Confirmation Modal */}
+      {showDeactivateProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lift ring-1 ring-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Deactivate project</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {project.name} will be marked inactive. Its recurring revenue stops counting toward
+              MRR/ARR and projections from the date below.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 mt-5 mb-1.5">Inactive from</label>
+            <input
+              type="date"
+              value={projectInactiveDate}
+              onChange={(e) => setProjectInactiveDate(e.target.value)}
+              className="form-input w-full"
+              autoFocus
+            />
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setShowDeactivateProject(false)} className="btn btn-secondary">Cancel</button>
+              <button
+                onClick={() => setProjectActiveStatus(false, projectInactiveDate)}
+                disabled={!projectInactiveDate}
+                className="btn btn-danger"
+              >
+                Deactivate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteProjectModal && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 max-w-sm mx-auto">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Delete Project
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Are you sure you want to delete this project? This will also delete all associated billable items and purchase orders. This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteProjectModal(false)}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteProject}
+                className="btn btn-danger"
+              >
+                Delete Project
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

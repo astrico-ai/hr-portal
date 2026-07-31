@@ -6,7 +6,8 @@ import {
   updateDocument, 
   deleteDocument as deleteFirestoreDocument,
   queryDocuments
-} from './firebaseService';
+} from './dataService';
+import { supabase } from './supabaseClient';
 
 const COLLECTIONS = {
   PROJECTS: 'projects',
@@ -124,6 +125,18 @@ export const getBillableItems = async (): Promise<BillableItem[]> => {
   }
 };
 
+// Items for a single project — INCLUDES the document blob columns (which the
+// bulk getBillableItems() omits for speed). Used by the project detail page,
+// where the view/download links need the base64 documents.
+export const getBillableItemsByProject = async (projectId: number): Promise<BillableItem[]> => {
+  try {
+    return await queryDocuments(COLLECTIONS.BILLABLE_ITEMS, 'project_id', '==', projectId) as unknown as BillableItem[];
+  } catch (error) {
+    console.error('Error getting billable items by project:', error);
+    return [];
+  }
+};
+
 export const saveBillableItem = async (formData: BillableItemFormData): Promise<BillableItem> => {
   try {
     const items = await getBillableItems();
@@ -157,7 +170,7 @@ export const saveBillableItem = async (formData: BillableItemFormData): Promise<
     }
 
     // Validate required fields for RAISED and RECEIVED status
-    if ((formData.status === 'RAISED' || formData.status === 'RECEIVED') && 
+    if ((formData.status === 'RAISED' || formData.status === 'RECEIVED') &&
         (!formData.invoice_number || !formData.invoice_document)) {
       throw new Error('Invoice number and document are required when status is RAISED or RECEIVED');
     }
@@ -166,7 +179,10 @@ export const saveBillableItem = async (formData: BillableItemFormData): Promise<
       id: newId,
       project_id: formData.project_id,
       name: formData.name,
+      line_items: formData.line_items && formData.line_items.length ? formData.line_items : undefined,
       type: formData.type,
+      billing_frequency: formData.type === 'LICENSE' ? formData.billing_frequency : undefined,
+      custom_interval_days: formData.type === 'LICENSE' && formData.billing_frequency === 'CUSTOM' ? formData.custom_interval_days : null,
       po_number: formData.po_number || null,
       po_end_date: formData.po_end_date || null,
       po_document_url: poDocumentUrl,
@@ -182,7 +198,12 @@ export const saveBillableItem = async (formData: BillableItemFormData): Promise<
       sales_manager: formData.sales_manager,
       project_manager: formData.project_manager,
       cx_manager: formData.cx_manager,
-      invoice_raised_by: formData.invoice_raised_by || null
+      invoice_raised_by: formData.invoice_raised_by || null,
+      // Initialize invoice generation fields
+      invoice_generated: false,
+      invoice_number_generated: null,
+      invoice_generation_date: null,
+      generated_pdf_url: null
     };
 
     // Remove any undefined values before saving to Firestore
@@ -201,7 +222,7 @@ export const saveBillableItem = async (formData: BillableItemFormData): Promise<
 export const updateBillableItem = async (itemId: number, updatedItem: BillableItem): Promise<void> => {
   try {
     // Validate required fields for RAISED and RECEIVED status
-    if ((updatedItem.status === 'RAISED' || updatedItem.status === 'RECEIVED') && 
+    if ((updatedItem.status === 'RAISED' || updatedItem.status === 'RECEIVED') &&
         (!updatedItem.invoice_number || !updatedItem.invoice_document_url)) {
       throw new Error('Invoice number and document are required when status is RAISED or RECEIVED');
     }
@@ -222,14 +243,30 @@ export async function deleteBillableItem(id: number): Promise<void> {
   await deleteFirestoreDocument(COLLECTIONS.BILLABLE_ITEMS, id.toString());
 }
 
-// File handling
+// File handling. On Supabase we upload to Storage and store the PATH; on Firebase
+// we keep the legacy base64 data URI. The document-open helper handles both.
+const useSupabaseStorage = (process.env.REACT_APP_DATA_BACKEND || 'firebase').toLowerCase() === 'supabase';
+const STORAGE_BUCKET = 'documents';
+
+const uploadToStorage = async (file: File, prefix: string): Promise<string> => {
+  const safeName = (file.name || 'document.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `${prefix}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(path, file, { upsert: true, contentType: file.type || 'application/pdf' });
+  if (error) throw error;
+  return path;
+};
+
 export function saveFile(file: File): Promise<string> {
-  return fileToBase64(file);
+  return useSupabaseStorage ? uploadToStorage(file, 'uploads') : fileToBase64(file);
 }
 
 export const uploadDocument = async (file: File, itemId: number, type: 'po' | 'proposal' | 'invoice'): Promise<string> => {
   try {
-    return await fileToBase64(file);
+    return useSupabaseStorage
+      ? await uploadToStorage(file, `billable_items/${itemId}/${type}`)
+      : await fileToBase64(file);
   } catch (error) {
     console.error('Error uploading document:', error);
     throw error;
@@ -305,4 +342,34 @@ export async function deletePurchaseOrder(poId: number): Promise<void> {
     console.error('Error deleting purchase order:', error);
     throw error;
   }
-} 
+}
+
+export const updatePurchaseOrder = async (po: Partial<PurchaseOrder> & { id: number }, document?: File): Promise<PurchaseOrder> => {
+  try {
+    // Get current PO
+    const currentPO = await getDocument(COLLECTIONS.PURCHASE_ORDERS, po.id.toString()) as unknown as PurchaseOrder;
+    if (!currentPO) {
+      throw new Error('Purchase order not found');
+    }
+
+    // If there's a new document, convert it to base64
+    let documentUrl = po.po_document_url;
+    if (document) {
+      documentUrl = await fileToBase64(document);
+    }
+
+    // Create updated PO
+    const updatedPO: PurchaseOrder = {
+      ...currentPO,
+      ...po,
+      po_document_url: documentUrl || currentPO.po_document_url
+    };
+
+    // Save to Firestore
+    await setDocument(COLLECTIONS.PURCHASE_ORDERS, po.id.toString(), updatedPO);
+    return updatedPO;
+  } catch (error) {
+    console.error('Error updating purchase order:', error);
+    throw error;
+  }
+}; 

@@ -17,7 +17,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
     spoc_mobile: '',
     sales_manager: '',
     project_manager: '',
-    cx_manager: ''
+    cx_manager: '',
   });
   const [loading, setLoading] = React.useState(false);
 
@@ -29,7 +29,15 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSuccess,
       await saveProject(formData as any);
       onSuccess();
       onClose();
-      setFormData({ client_id: 0, name: '', spoc_name: '', spoc_mobile: '', sales_manager: '', project_manager: '', cx_manager: '' });
+      setFormData({ 
+        client_id: 0, 
+        name: '', 
+        spoc_name: '', 
+        spoc_mobile: '', 
+        sales_manager: '', 
+        project_manager: '', 
+        cx_manager: '',
+      });
     } catch (error) {
       console.error('Failed to create project:', error);
     } finally {

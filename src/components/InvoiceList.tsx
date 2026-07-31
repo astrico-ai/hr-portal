@@ -6,6 +6,10 @@ import { getProjects, getBillableItems, updateBillableItem, deleteProject } from
 import ProjectModal from './ProjectModal';
 import { useNavigate } from 'react-router-dom';
 import { handleDocumentClick } from '../utils/documentUtils';
+import { generateInvoiceNumber } from '../lib/invoiceData';
+import { BANK_ACCOUNTS, getBank } from '../lib/invoiceConfig';
+import { logAudit } from '../lib/audit';
+import GstExport from './GstExport';
 
 interface ProjectWithClient {
   project: Project;
@@ -26,7 +30,7 @@ interface BillableItemWithDetails extends Omit<BillableItem, 'project_id'> {
   client?: Client;
 }
 
-type TabType = 'projects' | 'pending' | 'approve';
+type TabType = 'projects' | 'pending' | 'approve' | 'export';
 
 const InvoiceList = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -38,9 +42,13 @@ const InvoiceList = () => {
   const [loading, setLoading] = useState(true);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('projects');
+  const [clientFilter, setClientFilter] = useState<string>('ALL');
   const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
   const [rejectingItemId, setRejectingItemId] = useState<number | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<ProjectWithClient | null>(null);
+  // Bank chosen by the approver per item (required to approve) + full item list for numbering.
+  const [bankByItem, setBankByItem] = useState<Record<number, string>>({});
+  const [allItems, setAllItems] = useState<BillableItem[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -110,6 +118,7 @@ const InvoiceList = () => {
       setFilteredProjects(projectsWithClients);
       setPendingInvoices(pendingInvoices);
       setApprovalItems(approvalItems);
+      setAllItems(itemsData);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -122,6 +131,17 @@ const InvoiceList = () => {
       const item = approvalItems.find(i => i.id === itemId);
       if (!item) return;
 
+      const bankId = bankByItem[itemId];
+      if (!bankId) {
+        alert('Please select a bank account before approving this invoice.');
+        return;
+      }
+
+      // Invoice date = approval date (today). Number = next in that month's series.
+      const now = new Date();
+      const approvalDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const invoiceNo = item.invoice_number || generateInvoiceNumber(approvalDate, allItems);
+
       const updatedItem: BillableItem = {
         id: item.id,
         project_id: item.project_id,
@@ -131,25 +151,27 @@ const InvoiceList = () => {
         po_end_date: item.po_end_date,
         po_document_url: item.po_document_url,
         proposal_document_url: item.proposal_document_url,
-        invoice_number: item.invoice_number,
+        invoice_number: invoiceNo,
         invoice_document_url: item.invoice_document_url,
         start_date: item.start_date,
         end_date: item.end_date,
         amount: item.amount,
-        invoice_date: item.invoice_date,
-        payment_date: item.payment_date,
+        invoice_date: approvalDate,
         status: 'APPROVED',
         sales_manager: item.sales_manager,
         project_manager: item.project_manager,
         cx_manager: item.cx_manager,
-        invoice_raised_by: item.invoice_raised_by
+        bank_account: bankId,
       };
 
       await updateBillableItem(itemId, updatedItem);
+      logAudit('Invoice approved', `${invoiceNo} · ${item.client?.legal_name ?? ''} · ${getBank(bankId)?.bankName ?? ''}`, itemId);
+      setAllItems(prev => prev.map(i => (i.id === itemId ? { ...i, invoice_number: invoiceNo } : i)));
       setApprovalItems(approvalItems.filter(i => i.id !== itemId));
       setApprovingItemId(null);
     } catch (error) {
       console.error('Failed to approve item:', error);
+      alert('Failed to approve the invoice. See console for details.');
     }
   };
 
@@ -173,15 +195,14 @@ const InvoiceList = () => {
         end_date: item.end_date,
         amount: item.amount,
         invoice_date: item.invoice_date,
-        payment_date: item.payment_date,
         status: 'NOT_APPROVED',
         sales_manager: item.sales_manager,
         project_manager: item.project_manager,
-        cx_manager: item.cx_manager,
-        invoice_raised_by: item.invoice_raised_by
+        cx_manager: item.cx_manager
       };
 
       await updateBillableItem(itemId, updatedItem);
+      logAudit('Invoice rejected', `${item.name} · ${item.client?.legal_name ?? ''}`, itemId);
       setApprovalItems(approvalItems.filter(i => i.id !== itemId));
       setRejectingItemId(null);
     } catch (error) {
@@ -210,6 +231,27 @@ const InvoiceList = () => {
       </div>
     );
   }
+
+  // Distinct clients (for the filter dropdown) and the search+filter-scoped,
+  // client-grouped project list.
+  const clientOptions = Array.from(
+    new Map(projects.map(p => [p.client.id, p.client])).values()
+  ).sort((a, b) => a.legal_name.localeCompare(b.legal_name));
+
+  const projectGroups = (() => {
+    const scoped = filteredProjects.filter(
+      p => clientFilter === 'ALL' || p.client.id === Number(clientFilter)
+    );
+    const map = new Map<number, { client: Client; rows: ProjectWithClient[]; items: number; total: number }>();
+    scoped.forEach(p => {
+      const g = map.get(p.client.id) || { client: p.client, rows: [], items: 0, total: 0 };
+      g.rows.push(p);
+      g.items += p.itemCount;
+      g.total += p.totalAmount;
+      map.set(p.client.id, g);
+    });
+    return Array.from(map.values()).sort((a, b) => a.client.legal_name.localeCompare(b.client.legal_name));
+  })();
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -273,6 +315,18 @@ const InvoiceList = () => {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('export')}
+            className={`
+              py-4 px-1 border-b-2 text-sm font-medium
+              ${activeTab === 'export'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }
+            `}
+          >
+            GST Export
+          </button>
         </nav>
       </div>
 
@@ -309,117 +363,91 @@ const InvoiceList = () => {
                 className="form-input pl-10 w-full"
               />
             </div>
+            <select
+              value={clientFilter}
+              onChange={(e) => setClientFilter(e.target.value)}
+              className="form-select w-full sm:w-auto sm:min-w-[200px]"
+            >
+              <option value="ALL">All clients</option>
+              {clientOptions.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.legal_name}{c.is_active === false ? ' (inactive)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="mt-4 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
-                    Project
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                    Client
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                    SPOC
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                    Mobile
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">
-                    Items
-                  </th>
-                  <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">
-                    Total Amount
-                  </th>
-                  <th scope="col" className="hidden">
-                    View
-                  </th>
-                  <th scope="col" className="hidden">
-                    Delete
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {filteredProjects.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8">
-                      <div className="text-center">
-                        <p className="text-sm text-gray-500">
-                          {searchTerm.trim() 
-                            ? 'No projects found matching your search'
-                            : 'No projects found'}
-                        </p>
-                        {!searchTerm.trim() && (
-                          <div className="mt-4">
+          {projectGroups.length === 0 ? (
+            <div className="mt-4 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg py-12 text-center">
+              <p className="text-sm text-gray-500">
+                {searchTerm.trim() || clientFilter !== 'ALL'
+                  ? 'No projects match your search/filter'
+                  : 'No projects found'}
+              </p>
+              {!searchTerm.trim() && clientFilter === 'ALL' && (
+                <div className="mt-4">
+                  <button onClick={() => setIsProjectModalOpen(true)} className="btn btn-primary">
+                    <Plus className="h-4 w-4" />
+                    Create your first project
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 space-y-5">
+              {projectGroups.map(group => (
+                <div key={group.client.id} className="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/60 px-6 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-gray-900">{group.client.legal_name}</h3>
+                      {group.client.is_active === false && (
+                        <span className="badge bg-gray-100 ring-gray-200 text-gray-500">Inactive</span>
+                      )}
+                      <span className="text-xs text-gray-400">
+                        · {group.rows.length} project{group.rows.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <span className="text-sm font-medium text-gray-900">₹{group.total.toLocaleString()}</span>
+                  </div>
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="py-3 pl-6 pr-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Project</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">SPOC</th>
+                        <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Mobile</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Items</th>
+                        <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Total Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {group.rows.map(({ project, itemCount, totalAmount }) => (
+                        <tr key={project.id} className="hover:bg-gray-50/70 transition duration-150">
+                          <td className="py-3.5 pl-6 pr-3 text-sm">
                             <button
-                              onClick={() => setIsProjectModalOpen(true)}
-                              className="btn btn-primary"
+                              onClick={() => navigate(`/invoices/project/${project.id}`)}
+                              className="font-medium text-primary-600 hover:text-primary-900"
                             >
-                              <Plus className="h-4 w-4" />
-                              Create your first project
+                              {project.name}
                             </button>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredProjects.map(({ project, client, itemCount, totalAmount }) => (
-                    <tr 
-                      key={project.id} 
-                      className="hover:bg-gray-50 transition duration-150"
-                    >
-                      <td className="py-4 pl-4 pr-3 text-sm sm:pl-6">
-                        <button
-                          onClick={() => navigate(`/invoices/project/${project.id}`)}
-                          className="font-medium text-primary-600 hover:text-primary-900"
-                        >
-                          {project.name}
-                        </button>
-                      </td>
-                      <td className="px-3 py-4 text-sm text-gray-900">
-                        {client.legal_name}
-                      </td>
-                      <td className="px-3 py-4 text-sm text-gray-500">
-                        {project.spoc_name}
-                      </td>
-                      <td className="px-3 py-4 text-sm text-gray-500">
-                        {project.spoc_mobile}
-                      </td>
-                      <td className="px-3 py-4 text-sm text-gray-900 text-right">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {itemCount}
-                        </span>
-                      </td>
-                      <td className="px-3 py-4 text-sm font-medium text-gray-900 text-right">
-                        ₹{totalAmount.toLocaleString()}
-                      </td>
-                      <td className="hidden">
-                        <button 
-                          onClick={() => navigate(`/invoices/project/${project.id}`)}
-                          className="inline-flex items-center justify-center p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors duration-200"
-                          title="View Project"
-                        >
-                          <ChevronRight className="h-5 w-5" />
-                        </button>
-                      </td>
-                      <td className="hidden">
-                        <button
-                          onClick={() => setProjectToDelete({ project, client, itemCount, totalAmount })}
-                          className="inline-flex items-center justify-center p-2 bg-red-50 text-red-600 hover:text-white hover:bg-red-600 rounded-full transition-colors duration-200"
-                          title="Delete Project"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                          </td>
+                          <td className="px-3 py-3.5 text-sm text-gray-500">{project.spoc_name}</td>
+                          <td className="px-3 py-3.5 text-sm text-gray-500">{project.spoc_mobile}</td>
+                          <td className="px-3 py-3.5 text-right text-sm text-gray-900">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {itemCount}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3.5 text-right text-sm font-medium text-gray-900">
+                            ₹{totalAmount.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       ) : activeTab === 'pending' ? (
         <>
@@ -516,7 +544,7 @@ const InvoiceList = () => {
             </table>
           </div>
         </>
-      ) : (
+      ) : activeTab === 'approve' ? (
         <>
           <div className="mt-8 sm:flex sm:items-center">
             <div className="sm:flex-auto">
@@ -565,6 +593,9 @@ const InvoiceList = () => {
                     </th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Documents
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Bank Account <span className="text-red-500">*</span>
                     </th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Actions
@@ -641,6 +672,20 @@ const InvoiceList = () => {
                         </div>
                       </td>
                       <td className="px-3 py-4">
+                        <select
+                          value={bankByItem[item.id] || ''}
+                          onChange={(e) =>
+                            setBankByItem(prev => ({ ...prev, [item.id]: e.target.value }))
+                          }
+                          className="form-select w-full min-w-[180px] rounded-lg border-gray-300 py-1.5 text-sm"
+                        >
+                          <option value="">Select bank…</option>
+                          {BANK_ACCOUNTS.map(b => (
+                            <option key={b.id} value={b.id}>{b.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-4">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleApprove(item.id)}
@@ -667,6 +712,14 @@ const InvoiceList = () => {
             </div>
           </div>
         </>
+      ) : (
+        <div className="mt-8">
+          <GstExport
+            projects={projects.map(p => p.project)}
+            clients={clients}
+            billableItems={allItems}
+          />
+        </div>
       )}
 
       {projectToDelete && (
