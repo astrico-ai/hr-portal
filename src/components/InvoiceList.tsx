@@ -143,24 +143,10 @@ const InvoiceList = () => {
       const invoiceNo = item.invoice_number || generateInvoiceNumber(approvalDate, allItems);
 
       const updatedItem: BillableItem = {
-        id: item.id,
-        project_id: item.project_id,
-        name: item.name,
-        type: item.type,
-        po_number: item.po_number,
-        po_end_date: item.po_end_date,
-        po_document_url: item.po_document_url,
-        proposal_document_url: item.proposal_document_url,
+        ...item,
         invoice_number: invoiceNo,
-        invoice_document_url: item.invoice_document_url,
-        start_date: item.start_date,
-        end_date: item.end_date,
-        amount: item.amount,
         invoice_date: approvalDate,
         status: 'APPROVED',
-        sales_manager: item.sales_manager,
-        project_manager: item.project_manager,
-        cx_manager: item.cx_manager,
         bank_account: bankId,
       };
 
@@ -181,24 +167,8 @@ const InvoiceList = () => {
       if (!item) return;
 
       const updatedItem: BillableItem = {
-        id: item.id,
-        project_id: item.project_id,
-        name: item.name,
-        type: item.type,
-        po_number: item.po_number,
-        po_end_date: item.po_end_date,
-        po_document_url: item.po_document_url,
-        proposal_document_url: item.proposal_document_url,
-        invoice_number: item.invoice_number,
-        invoice_document_url: item.invoice_document_url,
-        start_date: item.start_date,
-        end_date: item.end_date,
-        amount: item.amount,
-        invoice_date: item.invoice_date,
+        ...item,
         status: 'NOT_APPROVED',
-        sales_manager: item.sales_manager,
-        project_manager: item.project_manager,
-        cx_manager: item.cx_manager
       };
 
       await updateBillableItem(itemId, updatedItem);

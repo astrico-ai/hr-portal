@@ -139,23 +139,10 @@ const ApproveInvoices: React.FC = () => {
       const item = items.find(i => i.id === itemId);
       if (!item) return;
 
-      // Create a new object with only the BillableItem properties
+      // Keep all fields, only flip the status.
       const updatedItem: BillableItem = {
-        id: item.id,
-        project_id: item.project_id,
-        name: item.name,
-        type: item.type,
-        po_number: item.po_number,
-        po_end_date: item.po_end_date,
-        po_document_url: item.po_document_url,
-        proposal_document_url: item.proposal_document_url,
-        invoice_number: item.invoice_number,
-        invoice_document_url: item.invoice_document_url,
-        start_date: item.start_date,
-        end_date: item.end_date,
-        amount: item.amount,
-        invoice_date: item.invoice_date,
-        status: 'NOT_APPROVED'
+        ...item,
+        status: 'NOT_APPROVED',
       };
 
       await updateBillableItem(itemId, updatedItem);
