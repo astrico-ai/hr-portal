@@ -41,6 +41,11 @@ export const setEmployeeActive = async (id: number, is_active: boolean): Promise
   if (error) throw error;
 };
 
+export const updateEmployeeSalary = async (id: number, salary: number): Promise<void> => {
+  const { error } = await supabase.from('employees').update({ salary: Number(salary) || 0 }).eq('id', id);
+  if (error) throw error;
+};
+
 export const deleteEmployee = async (id: number): Promise<void> => {
   const { error } = await supabase.from('employees').delete().eq('id', id);
   if (error) throw error;

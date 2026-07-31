@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Wallet, Plus, Download, Trash2, X, Users } from 'lucide-react';
-import { getEmployees, saveEmployee, setEmployeeActive, deleteEmployee, type Employee } from '../lib/employees';
+import { getEmployees, saveEmployee, setEmployeeActive, updateEmployeeSalary, deleteEmployee, type Employee } from '../lib/employees';
 import { downloadSalarySheet } from '../lib/salarySheet';
 
 const MONTHS = [
@@ -67,6 +67,18 @@ const Disbursement: React.FC = () => {
   const handleToggle = async (emp: Employee) => {
     await setEmployeeActive(emp.id!, emp.is_active === false);
     await load();
+  };
+
+  // Persist an edited salary on blur; update local state so the total refreshes.
+  const handleSalaryChange = async (emp: Employee, value: string) => {
+    const salary = Number(value) || 0;
+    if (salary === Number(emp.salary)) return;
+    try {
+      await updateEmployeeSalary(emp.id!, salary);
+      setEmployees((prev) => prev.map((x) => (x.id === emp.id ? { ...x, salary } : x)));
+    } catch (err: any) {
+      alert('Failed to update salary: ' + (err?.message || err));
+    }
   };
 
   const handleDelete = async (emp: Employee) => {
@@ -170,7 +182,19 @@ const Disbursement: React.FC = () => {
                       <td className="px-6 py-3 text-sm font-medium text-gray-900">{emp.name}</td>
                       <td className="px-3 py-3 font-mono text-xs text-gray-600">{emp.ifsc}</td>
                       <td className="px-3 py-3 font-mono text-xs text-gray-600">{emp.account_number}</td>
-                      <td className="px-3 py-3 text-right text-sm font-semibold text-gray-900">{formatCurrency(Number(emp.salary) || 0)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-xs text-gray-400">₹</span>
+                          <input
+                            type="number"
+                            defaultValue={Number(emp.salary) || 0}
+                            onBlur={(e) => handleSalaryChange(emp, e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                            className="form-input w-28 py-1 text-right text-sm font-semibold"
+                            title="Click to edit — saves on blur"
+                          />
+                        </div>
+                      </td>
                       <td className="px-3 py-3 text-center">
                         <span className="badge bg-white ring-gray-200 text-gray-500">{bankType(emp.ifsc)}</span>
                       </td>
