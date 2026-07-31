@@ -6,7 +6,7 @@ import {
   updateDocument, 
   deleteDocument as deleteFirestoreDocument,
   queryDocuments
-} from './firebaseService';
+} from './dataService';
 import { saveFile } from './storage';
 
 const COLLECTIONS = {

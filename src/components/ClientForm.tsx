@@ -95,6 +95,7 @@ const ClientForm = () => {
       navigate('/clients');
     } catch (error) {
       console.error('Failed to save client:', error);
+      alert(`Failed to save client: ${error instanceof Error ? error.message : 'See console for details.'}`);
     } finally {
       setLoading(false);
     }

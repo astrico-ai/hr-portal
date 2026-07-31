@@ -32,10 +32,18 @@ const StatusToggle: React.FC<StatusToggleProps> = ({ client, onToggle }) => {
   );
 };
 
+const todayYMD = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const ClientList = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  // Client being deactivated — we ask for the inactivation date first.
+  const [deactivating, setDeactivating] = useState<Client | null>(null);
+  const [inactiveDate, setInactiveDate] = useState(todayYMD());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -69,14 +77,35 @@ const ClientList = () => {
   async function handleStatusToggle(e: React.MouseEvent, client: Client) {
     e.preventDefault();
     e.stopPropagation();
-    
+
+    if (client.is_active) {
+      // Deactivating → ask for the inactivation date first.
+      setInactiveDate(todayYMD());
+      setDeactivating(client);
+      return;
+    }
+
+    // Reactivating → clear the inactivation date.
     try {
-      const updatedClient = await updateClient(client.id, {
-        is_active: !client.is_active
-      });
+      const updatedClient = await updateClient(client.id, { is_active: true, inactive_date: null });
       setClients(clients.map(c => c.id === client.id ? updatedClient : c));
     } catch (error) {
-      console.error('Failed to update client status:', error);
+      console.error('Failed to reactivate client:', error);
+    }
+  }
+
+  async function confirmDeactivate() {
+    if (!deactivating) return;
+    try {
+      const updatedClient = await updateClient(deactivating.id, {
+        is_active: false,
+        inactive_date: inactiveDate,
+      });
+      setClients(clients.map(c => c.id === deactivating.id ? updatedClient : c));
+      setDeactivating(null);
+    } catch (error) {
+      console.error('Failed to deactivate client:', error);
+      alert('Failed to deactivate client. See console for details.');
     }
   }
 
@@ -232,6 +261,32 @@ const ClientList = () => {
           </table>
         </div>
       </div>
+
+      {deactivating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lift ring-1 ring-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Deactivate client</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {deactivating.legal_name} will be marked inactive. Their recurring revenue (MRR/ARR)
+              and projections stop counting from the date below.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 mt-5 mb-1.5">Inactive from</label>
+            <input
+              type="date"
+              value={inactiveDate}
+              onChange={(e) => setInactiveDate(e.target.value)}
+              className="form-input w-full"
+              autoFocus
+            />
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setDeactivating(null)} className="btn btn-secondary">Cancel</button>
+              <button onClick={confirmDeactivate} disabled={!inactiveDate} className="btn btn-danger">
+                Deactivate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

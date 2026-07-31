@@ -21,6 +21,8 @@ export interface Client {
   updated_at: string;
   documents?: Document[];
   is_active: boolean;
+  // Date the client was marked inactive (revenue stops counting from here).
+  inactive_date?: string | null;
 }
 
 export interface ClientFormData {
@@ -47,6 +49,10 @@ export interface Project {
   sales_manager: string;
   project_manager: string;
   cx_manager: string;
+  mrr: number;
+  // Active by default; inactive projects stop counting toward MRR/ARR.
+  is_active?: boolean;
+  inactive_date?: string | null;
 }
 
 export interface ProjectFormData {
@@ -62,11 +68,26 @@ export interface ProjectFormData {
 export type BillableStatus = 'NOT_APPROVED' | 'PENDING' | 'APPROVED' | 'RAISED' | 'RECEIVED';
 export type BillableType = 'LICENSE' | 'ONE_TIME' | 'OTHERS';
 
+// A single line on an invoice (one invoice/bill can have several).
+// amount = quantity × rate when both are given; otherwise it's a lump sum.
+export interface BillableLineItem {
+  description: string;
+  quantity?: number | null;
+  rate?: number | null;   // unit cost
+  unit?: string | null;   // the "per" label, e.g. "Unt", "Month"
+  amount: number;
+}
+
 export interface BillableItem {
   id: number;
   project_id: number;
   name: string;
   type: BillableType;
+  // Multiple line items per invoice; `amount` is the sum. Optional for
+  // backward-compat (older items have a single name/amount).
+  line_items?: BillableLineItem[];
+  billing_frequency?: 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY' | 'CUSTOM';
+  custom_interval_days?: number | null;
   po_number: string | null;
   po_end_date: string | null;
   po_document_url: string | null;
@@ -83,12 +104,22 @@ export interface BillableItem {
   project_manager: string;
   cx_manager: string;
   invoice_raised_by: string | null;
+  // Bank account (chosen by the approver) used on the generated invoice PDF.
+  bank_account?: string | null;
+  // Invoice generation tracking
+  invoice_generated: boolean;
+  invoice_number_generated?: string | null;
+  invoice_generation_date?: string | null;
+  generated_pdf_url?: string | null;
 }
 
 export interface BillableItemFormData {
   project_id: number;
   name: string;
   type: BillableType;
+  line_items?: BillableLineItem[];
+  billing_frequency?: 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY' | 'CUSTOM';
+  custom_interval_days?: number | null;
   po_number: string | null;
   po_end_date: string | null;
   po_document: File | null;

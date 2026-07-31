@@ -6,6 +6,10 @@ import { getBillableItems, updateBillableItem } from '../lib/storage';
 import { getClients } from '../lib/clients';
 import { getProjects } from '../lib/storage';
 import { handleDocumentClick } from '../utils/documentUtils';
+import { BANK_ACCOUNTS, getBank } from '../lib/invoiceConfig';
+import { pdf } from '@react-pdf/renderer';
+import InvoiceDocument from './InvoiceDocument';
+import { buildInvoiceData, generateInvoiceNumber } from '../lib/invoiceData';
 
 interface BillableItemWithDetails extends Omit<BillableItem, 'project_id'> {
   project_id: number;
@@ -19,6 +23,11 @@ const ApproveInvoices: React.FC = () => {
   const [items, setItems] = useState<BillableItemWithDetails[]>([]);
   const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
   const [rejectingItemId, setRejectingItemId] = useState<number | null>(null);
+  // Bank the approver picks per item — required before approval.
+  const [bankByItem, setBankByItem] = useState<Record<number, string>>({});
+  // Full billable list, kept for sequential invoice numbering.
+  const [allItems, setAllItems] = useState<BillableItem[]>([]);
+  const [approving, setApproving] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -32,8 +41,10 @@ const ApproveInvoices: React.FC = () => {
         getProjects()
       ]);
 
+      setAllItems(billableItems);
+
       // Filter items that are pending approval or approved
-      const relevantItems = billableItems.filter(item => 
+      const relevantItems = billableItems.filter(item =>
         item.status === 'PENDING'  // Only show PENDING items
       );
 
@@ -60,8 +71,26 @@ const ApproveInvoices: React.FC = () => {
       const item = items.find(i => i.id === itemId);
       if (!item) return;
 
-      // Create a new object with only the BillableItem properties
-      const updatedItem: BillableItem = {
+      const bankId = bankByItem[itemId];
+      const bank = getBank(bankId);
+      if (!bankId || !bank) {
+        alert('Please select a bank account before approving this invoice.');
+        return;
+      }
+      if (!item.project || !item.client) {
+        alert('This item is missing its project/client and cannot be invoiced.');
+        return;
+      }
+
+      setApproving(true);
+
+      // Invoice date = approval date (today). Number = next in that month's series.
+      const now = new Date();
+      const approvalDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const invoiceNo = item.invoice_number || generateInvoiceNumber(approvalDate, allItems);
+
+      // updateBillableItem merges, so we only send the changed fields.
+      const updatedItem = {
         id: item.id,
         project_id: item.project_id,
         name: item.name,
@@ -70,20 +99,38 @@ const ApproveInvoices: React.FC = () => {
         po_end_date: item.po_end_date,
         po_document_url: item.po_document_url,
         proposal_document_url: item.proposal_document_url,
-        invoice_number: item.invoice_number,
-        invoice_document_url: item.invoice_document_url,
         start_date: item.start_date,
         end_date: item.end_date,
         amount: item.amount,
-        invoice_date: item.invoice_date,
-        status: 'APPROVED'
-      };
+        invoice_number: invoiceNo,
+        invoice_date: approvalDate,
+        status: 'APPROVED' as const,
+        bank_account: bankId,
+      } as BillableItem;
 
       await updateBillableItem(itemId, updatedItem);
+
+      // Generate and download the invoice PDF in the standard format.
+      const data = buildInvoiceData(updatedItem, item.project, item.client, bank, invoiceNo);
+      const blob = await pdf(<InvoiceDocument data={data} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${invoiceNo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      // Keep the new number in allItems so the next approval increments correctly.
+      setAllItems(prev => prev.map(i => (i.id === itemId ? { ...i, invoice_number: invoiceNo } : i)));
       setItems(items.filter(i => i.id !== itemId));
       setApprovingItemId(null);
     } catch (error) {
       console.error('Failed to approve item:', error);
+      alert('Failed to approve / generate the invoice. See console for details.');
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -175,6 +222,9 @@ const ApproveInvoices: React.FC = () => {
                     Documents
                   </th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                    Bank Account <span className="text-red-500">*</span>
+                  </th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                     Actions
                   </th>
                 </tr>
@@ -249,6 +299,20 @@ const ApproveInvoices: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-3 py-4">
+                      <select
+                        value={bankByItem[item.id] || ''}
+                        onChange={(e) =>
+                          setBankByItem(prev => ({ ...prev, [item.id]: e.target.value }))
+                        }
+                        className="form-select w-full min-w-[180px] rounded-lg border-gray-300 py-1.5 text-sm"
+                      >
+                        <option value="">Select bank…</option>
+                        {BANK_ACCOUNTS.map(b => (
+                          <option key={b.id} value={b.id}>{b.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-4">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => setApprovingItemId(item.id)}
@@ -283,23 +347,26 @@ const ApproveInvoices: React.FC = () => {
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
           <div className="bg-white rounded-lg p-6 max-w-sm mx-auto">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Approve Invoice
+              Approve &amp; Generate Invoice
             </h3>
             <p className="text-sm text-gray-500 mb-4">
-              Are you sure you want to approve this invoice? This will allow the user to create an invoice.
+              The invoice will be dated today, numbered automatically, and the PDF
+              will download using the selected bank account.
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setApprovingItemId(null)}
                 className="btn btn-secondary"
+                disabled={approving}
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleApprove(approvingItemId)}
                 className="btn btn-primary"
+                disabled={approving}
               >
-                Approve
+                {approving ? 'Generating…' : 'Approve & Download'}
               </button>
             </div>
           </div>

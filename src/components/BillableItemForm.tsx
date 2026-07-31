@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import type { BillableItemFormData, BillableType, PurchaseOrder, BillableItem, Project } from '../types';
+import type { BillableItemFormData, BillableType, PurchaseOrder, BillableItem, Project, BillableLineItem } from '../types';
 import { saveBillableItem, getPurchaseOrders, getBillableItems, getProjects } from '../lib/storage';
+import LineItemsEditor from './LineItemsEditor';
 
 const BILLABLE_TYPES: BillableType[] = ['LICENSE', 'ONE_TIME', 'OTHERS'];
+const BILLING_FREQUENCIES = ['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY', 'CUSTOM'] as const;
+type BillingFrequency = typeof BILLING_FREQUENCIES[number];
 const adminUsers = ['Vraj Sheth', 'Sanuj Philip'];
 
 const BillableItemForm = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Optional pre-fill passed from "Next Due Invoices" → user just edits what's missing.
+  const prefill = (location.state as Partial<BillableItemFormData> | null) || null;
   const [loading, setLoading] = useState(false);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [billableItems, setBillableItems] = useState<BillableItem[]>([]);
@@ -18,6 +24,8 @@ const BillableItemForm = () => {
     project_id: parseInt(projectId || '0'),
     name: '',
     type: 'LICENSE',
+    billing_frequency: 'MONTHLY',
+    custom_interval_days: null,
     po_number: null,
     po_end_date: null,
     po_document: null,
@@ -33,8 +41,17 @@ const BillableItemForm = () => {
     sales_manager: '',
     project_manager: '',
     cx_manager: '',
-    invoice_raised_by: null
+    invoice_raised_by: null,
+    ...(prefill || {}),
   });
+  // Line items (description + cost). Seeded from a prefill or a single blank row.
+  const [lineItems, setLineItems] = useState<BillableLineItem[]>(
+    prefill?.line_items?.length
+      ? prefill.line_items
+      : prefill?.name
+      ? [{ description: prefill.name, amount: prefill.amount || 0 }]
+      : [{ description: '', amount: 0 }]
+  );
 
   useEffect(() => {
     const loadData = async () => {
@@ -93,9 +110,31 @@ const BillableItemForm = () => {
     try {
       const form = e.target as HTMLFormElement;
       const proposalDocumentInput = form.querySelector<HTMLInputElement>('#proposal_document');
-      
+
+      const cleanLines = lineItems
+        .filter(li => li.description.trim() || li.amount || li.quantity || li.rate)
+        .map(li => ({
+          ...li,
+          // qty × rate wins when both are present; else the lump amount.
+          amount: li.quantity && li.rate
+            ? Math.round(Number(li.quantity) * Number(li.rate) * 100) / 100
+            : Number(li.amount) || 0,
+        }));
+      if (cleanLines.length === 0) {
+        alert('Please add at least one line item.');
+        setLoading(false);
+        return;
+      }
+      const total = cleanLines.reduce((s, li) => s + li.amount, 0);
+      const name = cleanLines.length === 1
+        ? cleanLines[0].description
+        : cleanLines.map(li => li.description).filter(Boolean).join(' + ');
+
       const submitData: BillableItemFormData = {
         ...formData,
+        name,
+        amount: total,
+        line_items: cleanLines,
         proposal_document: proposalDocumentInput?.files?.[0] || null,
         // Don't include a PO document since we're using an existing PO
         po_document: null
@@ -126,22 +165,16 @@ const BillableItemForm = () => {
           </h1>
         </div>
 
+        {prefill && (
+          <div className="mb-6 rounded-xl bg-primary-50 px-4 py-3 text-sm text-primary-800 ring-1 ring-primary-200">
+            Pre-filled from <span className="font-medium">Next Due Invoices</span> — review the values and complete anything missing, then save.
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div className="bg-white shadow-sm ring-1 ring-gray-200 px-4 py-5 sm:rounded-lg sm:p-6">
             <div className="space-y-6">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                  Item Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  required
-                  className="form-input mt-1 w-full"
-                />
-              </div>
+              <LineItemsEditor value={lineItems} onChange={setLineItems} />
 
               <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-700">
@@ -162,55 +195,81 @@ const BillableItemForm = () => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="po_number" className="block text-sm font-medium text-gray-700">
-                    Purchase Order <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="po_number"
-                    value={formData.po_number || ''}
-                    onChange={(e) => {
-                      const selectedPO = purchaseOrders.find(po => po.po_number === e.target.value);
-                      setFormData(prev => ({
-                        ...prev,
-                        po_number: e.target.value || null,
-                        po_end_date: selectedPO?.po_end_date || null,
-                        po_document_url: selectedPO?.po_document_url || null
-                      }));
-                    }}
-                    required
-                    className="form-select mt-1 w-full"
-                  >
-                    <option value="">Select a PO</option>
-                    <option value="NO_PO_REQUIRED">No PO Required</option>
-                    {availablePOs.map(po => (
-                      <option key={po.id} value={po.po_number}>
-                        {po.name} - ₹{po.remainingAmount.toLocaleString()} available
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
-                    Amount <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500 sm:text-sm">₹</span>
-                    </div>
-                    <input
-                      type="number"
-                      id="amount"
-                      value={formData.amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+              {formData.type === 'LICENSE' && (
+                <>
+                  <div>
+                    <label htmlFor="billing_frequency" className="block text-sm font-medium text-gray-700">
+                      Billing Frequency <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      id="billing_frequency"
+                      value={formData.billing_frequency}
+                      onChange={(e) => setFormData(prev => ({ 
+                        ...prev, 
+                        billing_frequency: e.target.value as BillingFrequency,
+                        custom_interval_days: e.target.value === 'CUSTOM' ? prev.custom_interval_days : null
+                      }))}
                       required
-                      min="0"
-                      step="0.01"
-                      className="form-input pl-7 w-full"
-                    />
+                      className="form-select mt-1 w-full"
+                    >
+                      {BILLING_FREQUENCIES.map(freq => (
+                        <option key={freq} value={freq}>
+                          {freq.replace('_', ' ')}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </div>
+
+                  {formData.billing_frequency === 'CUSTOM' && (
+                    <div>
+                      <label htmlFor="custom_interval_days" className="block text-sm font-medium text-gray-700">
+                        Custom Interval (in days) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="custom_interval_days"
+                        value={formData.custom_interval_days || ''}
+                        onChange={(e) => setFormData(prev => ({ 
+                          ...prev, 
+                          custom_interval_days: e.target.value ? parseInt(e.target.value) : null 
+                        }))}
+                        required
+                        min="1"
+                        className="form-input mt-1 w-full"
+                        placeholder="Enter number of days"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div>
+                <label htmlFor="po_number" className="block text-sm font-medium text-gray-700">
+                  Purchase Order <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="po_number"
+                  value={formData.po_number || ''}
+                  onChange={(e) => {
+                    const selectedPO = purchaseOrders.find(po => po.po_number === e.target.value);
+                    setFormData(prev => ({
+                      ...prev,
+                      po_number: e.target.value || null,
+                      po_end_date: selectedPO?.po_end_date || null,
+                      po_document_url: selectedPO?.po_document_url || null
+                    }));
+                  }}
+                  required
+                  className="form-select mt-1 w-full"
+                >
+                  <option value="">Select a PO</option>
+                  <option value="NO_PO_REQUIRED">No PO Required</option>
+                  {availablePOs.map(po => (
+                    <option key={po.id} value={po.po_number}>
+                      {po.name} - ₹{po.remainingAmount.toLocaleString()} available
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

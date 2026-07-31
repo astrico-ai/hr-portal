@@ -6,7 +6,7 @@ import {
   updateDocument, 
   deleteDocument as deleteFirestoreDocument,
   queryDocuments
-} from './firebaseService';
+} from './dataService';
 import { handleDocumentClick } from '../utils/documentUtils';
 
 const COLLECTIONS = {
@@ -74,11 +74,12 @@ export async function updateClient(id: number, clientData: Partial<Client>): Pro
     throw new Error('Client not found');
   }
 
-  // If we're updating fields other than is_active, check if client is active
-  if (Object.keys(clientData).length > 1 || (Object.keys(clientData).length === 1 && !('is_active' in clientData))) {
-    if (!existingClient.is_active) {
-      throw new Error('Cannot update an inactive client');
-    }
+  // Status-only changes (activate/deactivate + its date) are always allowed —
+  // including reactivating an inactive client. Other edits are blocked while inactive.
+  const STATUS_FIELDS = ['is_active', 'inactive_date'];
+  const onlyStatusChange = Object.keys(clientData).every(k => STATUS_FIELDS.includes(k));
+  if (!onlyStatusChange && !existingClient.is_active) {
+    throw new Error('Cannot update an inactive client');
   }
 
   const updatedClient: Client = {
@@ -129,22 +130,26 @@ export async function deleteDocument(documentId: number): Promise<void> {
 
 export async function saveClient(id: number | undefined, data: ClientFormData): Promise<Client> {
   const timestamp = new Date().toISOString();
-  
+
+  // Keep File/document fields OUT of the Firestore document — they're handled
+  // separately, and Firestore rejects `undefined` field values.
+  const { msa_document, nda_document, other_documents, ...clientFields } = data;
+
   let client: Client;
-  
+
   if (id) {
     // Update existing client
     const existingClient = await getClientById(id);
     if (!existingClient) throw new Error('Client not found');
-    
+
     // Don't allow updates if client is inactive
     if (!existingClient.is_active) {
       throw new Error('Cannot update an inactive client');
     }
-    
+
     client = {
       ...existingClient,
-      ...data,
+      ...clientFields,
       updated_at: timestamp
     };
     await updateDocument(COLLECTIONS.CLIENTS, id.toString(), client);
@@ -152,28 +157,28 @@ export async function saveClient(id: number | undefined, data: ClientFormData): 
     // Create new client
     client = {
       id: await getNextId(),
-      ...data,
+      ...clientFields,
       is_active: true, // Always set active for new clients
       created_at: timestamp,
       updated_at: timestamp,
       documents: []
     };
     await setDocument(COLLECTIONS.CLIENTS, client.id.toString(), client);
-    
+
     // Handle document uploads for new clients
-    if (data.msa_document) {
-      await saveDocument(client.id, 'MSA', undefined, data.msa_document);
+    if (msa_document) {
+      await saveDocument(client.id, 'MSA', undefined, msa_document);
     }
-    if (data.nda_document) {
-      await saveDocument(client.id, 'NDA', undefined, data.nda_document);
+    if (nda_document) {
+      await saveDocument(client.id, 'NDA', undefined, nda_document);
     }
-    if (data.other_documents) {
-      for (const doc of data.other_documents) {
-        await saveDocument(client.id, 'OTHER', doc.name, doc.file);
+    if (other_documents) {
+      for (const doc of other_documents) {
+        if (doc.file) await saveDocument(client.id, 'OTHER', doc.name, doc.file);
       }
     }
   }
-  
+
   return client;
 }
 
