@@ -20,3 +20,4 @@ create policy allowlist_all on public.employees for all to authenticated
   using (public.is_allowed_user()) with check (public.is_allowed_user());
 grant all on table public.employees to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
+

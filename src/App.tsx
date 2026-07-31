@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { FileText, Users, FileInput as FileInvoice, LogOut, LayoutDashboard, History, Wallet } from 'lucide-react';
+import { FileText, Users, FileInput as FileInvoice, LogOut, LayoutDashboard, History, Wallet, Contact } from 'lucide-react';
 import ClientList from './components/ClientList';
 import ClientForm from './components/ClientForm';
 import ClientDetails from './components/ClientDetails';
@@ -10,7 +10,8 @@ import ProjectDetails from './components/ProjectDetails';
 import BillableItemFormWrapper from './components/BillableItemFormWrapper';
 import Login from './components/Login';
 import AuditLog from './components/AuditLog';
-import Disbursement from './components/Disbursement';
+import HRCenter from './components/HRCenter';
+import Salary from './components/Salary';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ApproveInvoices from './components/ApproveInvoices';
 import { Analytics } from '@vercel/analytics/react';
@@ -48,7 +49,8 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, match: (p: string) => p === '/' },
   { to: '/clients', label: 'Clients', icon: Users, match: (p: string) => p.startsWith('/clients') },
   { to: '/invoices', label: 'Invoices', icon: FileInvoice, match: (p: string) => p.startsWith('/invoices') },
-  { to: '/disbursement', label: 'Disbursement', icon: Wallet, match: (p: string) => p.startsWith('/disbursement') },
+  { to: '/hr', label: 'HR Center', icon: Contact, match: (p: string) => p.startsWith('/hr') },
+  { to: '/salary', label: 'Salary', icon: Wallet, match: (p: string) => p.startsWith('/salary') },
   { to: '/activity', label: 'Activity', icon: History, match: (p: string) => p.startsWith('/activity') },
 ];
 
@@ -141,7 +143,8 @@ function App() {
                         <Route path="/clients/:id" element={<ClientDetails />} />
                         <Route path="/clients/:id/edit" element={<ClientForm />} />
                         <Route path="/invoices" element={<InvoiceList />} />
-                        <Route path="/disbursement" element={<Disbursement />} />
+                        <Route path="/hr" element={<HRCenter />} />
+                        <Route path="/salary" element={<Salary />} />
                         <Route path="/invoices/project/:projectId" element={<ProjectDetails />} />
                         <Route path="/invoices/project/:projectId/items/new" element={<BillableItemFormWrapper />} />
                         <Route path="/approve-invoices" element={<ApproveInvoices />} />
