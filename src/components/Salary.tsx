@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Wallet, Download, Upload, Eye, EyeOff, Pencil, X, FileSpreadsheet } from 'lucide-react';
+import { Wallet, Download, Upload, Pencil, X, FileSpreadsheet } from 'lucide-react';
 import {
   getEmployees, updateEmployee, updateEmployeeSalary, bulkUpdateSalaries, type Employee,
 } from '../lib/employees';
@@ -17,7 +17,7 @@ const maskAccount = (acc?: string | null) => { const s = String(acc || ''); retu
 const Salary: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reveal, setReveal] = useState(false);
+  const [editingSalaryId, setEditingSalaryId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [bankForm, setBankForm] = useState({ ifsc: '', account_number: '', salary: '' });
   const [saving, setSaving] = useState(false);
@@ -34,7 +34,6 @@ const Salary: React.FC = () => {
   const active = employees.filter((e) => e.is_active !== false);
   const totalPayout = active.reduce((s, e) => s + (Number(e.salary) || 0), 0);
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
-  const dots = <span className="tracking-widest text-gray-400">••••••</span>;
 
   const handleSalaryChange = async (emp: Employee, value: string) => {
     const salary = Number(value) || 0;
@@ -88,15 +87,9 @@ const Salary: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Salary</h1>
-          <p className="mt-1 text-sm text-gray-500">Bank details, salaries & payout sheet</p>
-        </div>
-        <button onClick={() => setReveal((r) => !r)} className="btn btn-secondary btn-sm">
-          {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          {reveal ? 'Hide amounts' : 'Show amounts'}
-        </button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Salary</h1>
+        <p className="mt-1 text-sm text-gray-500">Bank details, salaries & payout sheet</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 mb-6">
@@ -124,7 +117,7 @@ const Salary: React.FC = () => {
             </button>
           </div>
           <p className="mt-3 text-xs text-gray-400">
-            {active.length} employees · total {reveal ? formatCurrency(totalPayout) : '••••••'}. Bank-format Excel,
+            {active.length} employees · total {formatCurrency(totalPayout)}. Bank-format Excel,
             today's date, numbers as plain text.
           </p>
         </div>
@@ -182,23 +175,28 @@ const Salary: React.FC = () => {
                     <tr key={emp.id} className={isActive ? '' : 'opacity-50'}>
                       <td className="px-6 py-3 text-sm font-medium text-gray-900">{emp.name}</td>
                       <td className="px-3 py-3 font-mono text-xs text-gray-600">{emp.ifsc || '—'}</td>
-                      <td className="px-3 py-3 font-mono text-xs text-gray-600">
-                        {reveal ? (emp.account_number || '—') : maskAccount(emp.account_number)}
-                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-gray-600">{maskAccount(emp.account_number)}</td>
                       <td className="px-3 py-3 text-right">
-                        {reveal ? (
+                        {editingSalaryId === emp.id ? (
                           <div className="flex items-center justify-end gap-1">
                             <span className="text-xs text-gray-400">₹</span>
                             <input
                               type="number"
+                              autoFocus
                               defaultValue={Number(emp.salary) || 0}
-                              onBlur={(e) => handleSalaryChange(emp, e.target.value)}
+                              onBlur={(e) => { handleSalaryChange(emp, e.target.value); setEditingSalaryId(null); }}
                               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                               className="form-input w-28 py-1 text-right text-sm font-semibold"
                             />
                           </div>
                         ) : (
-                          <span className="text-sm font-semibold">{dots}</span>
+                          <button
+                            onClick={() => setEditingSalaryId(emp.id!)}
+                            className="text-sm font-semibold tracking-widest text-gray-400 hover:text-primary-600"
+                            title="Click to edit salary"
+                          >
+                            ••••••
+                          </button>
                         )}
                       </td>
                       <td className="px-3 py-3 text-center">
