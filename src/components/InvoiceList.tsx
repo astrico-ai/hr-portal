@@ -397,11 +397,6 @@ const InvoiceList = () => {
                         >
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-primary-600">{project.name}</p>
-                            {(project.spoc_name || project.spoc_mobile) && (
-                              <p className="truncate text-xs text-gray-400">
-                                {project.spoc_name}{project.spoc_name && project.spoc_mobile ? ' · ' : ''}{project.spoc_mobile}
-                              </p>
-                            )}
                           </div>
                           <span className="badge bg-blue-50 ring-blue-100 text-blue-700">
                             {itemCount} item{itemCount !== 1 ? 's' : ''}
