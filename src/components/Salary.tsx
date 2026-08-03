@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Wallet, Download, Upload, Pencil, X, FileSpreadsheet } from 'lucide-react';
+import { Wallet, Download, Upload, Pencil, X, FileSpreadsheet, Lock } from 'lucide-react';
 import {
   getEmployees, updateEmployee, updateEmployeeSalary, bulkUpdateSalaries, type Employee,
 } from '../lib/employees';
@@ -87,9 +87,18 @@ const Salary: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Salary</h1>
-        <p className="mt-1 text-sm text-gray-500">Bank details, salaries & payout sheet</p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Salary</h1>
+          <p className="mt-1 text-sm text-gray-500">Bank details, salaries & payout sheet</p>
+        </div>
+        <button
+          onClick={() => { sessionStorage.removeItem('salaryUnlocked'); window.location.reload(); }}
+          className="btn btn-secondary btn-sm"
+          title="Lock this page"
+        >
+          <Lock className="h-4 w-4" /> Lock
+        </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 mb-6">

@@ -15,6 +15,7 @@ import Login from './components/Login';
 import AuditLog from './components/AuditLog';
 import HRCenter from './components/HRCenter';
 import Salary from './components/Salary';
+import SalaryGate from './components/SalaryGate';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ApproveInvoices from './components/ApproveInvoices';
 import { Analytics } from '@vercel/analytics/react';
@@ -173,7 +174,7 @@ function AppShell() {
             <Route path="/clients/:id/edit" element={<ClientForm />} />
             <Route path="/invoices" element={<InvoiceList />} />
             <Route path="/hr" element={<HRCenter />} />
-            <Route path="/salary" element={<Salary />} />
+            <Route path="/salary" element={<SalaryGate><Salary /></SalaryGate>} />
             <Route path="/invoices/project/:projectId" element={<ProjectDetails />} />
             <Route path="/invoices/project/:projectId/items/new" element={<BillableItemFormWrapper />} />
             <Route path="/approve-invoices" element={<ApproveInvoices />} />
