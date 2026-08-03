@@ -388,41 +388,32 @@ const InvoiceList = () => {
                     </div>
                     <span className="text-sm font-medium text-gray-900">₹{group.total.toLocaleString()}</span>
                   </div>
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="py-3 pl-6 pr-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Project</th>
-                        <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">SPOC</th>
-                        <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Mobile</th>
-                        <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Items</th>
-                        <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Total Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
-                      {group.rows.map(({ project, itemCount, totalAmount }) => (
-                        <tr key={project.id} className="hover:bg-gray-50/70 transition duration-150">
-                          <td className="py-3.5 pl-6 pr-3 text-sm">
-                            <button
-                              onClick={() => navigate(`/invoices/project/${project.id}`)}
-                              className="font-medium text-primary-600 hover:text-primary-900"
-                            >
-                              {project.name}
-                            </button>
-                          </td>
-                          <td className="px-3 py-3.5 text-sm text-gray-500">{project.spoc_name}</td>
-                          <td className="px-3 py-3.5 text-sm text-gray-500">{project.spoc_mobile}</td>
-                          <td className="px-3 py-3.5 text-right text-sm text-gray-900">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {itemCount}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3.5 text-right text-sm font-medium text-gray-900">
+                  <ul className="divide-y divide-gray-100">
+                    {group.rows.map(({ project, itemCount, totalAmount }) => (
+                      <li key={project.id}>
+                        <button
+                          onClick={() => navigate(`/invoices/project/${project.id}`)}
+                          className="flex w-full items-center gap-3 px-6 py-3 text-left transition hover:bg-gray-50/70"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-primary-600">{project.name}</p>
+                            {(project.spoc_name || project.spoc_mobile) && (
+                              <p className="truncate text-xs text-gray-400">
+                                {project.spoc_name}{project.spoc_name && project.spoc_mobile ? ' · ' : ''}{project.spoc_mobile}
+                              </p>
+                            )}
+                          </div>
+                          <span className="badge bg-blue-50 ring-blue-100 text-blue-700">
+                            {itemCount} item{itemCount !== 1 ? 's' : ''}
+                          </span>
+                          <span className="w-28 text-right text-sm font-medium text-gray-900">
                             ₹{totalAmount.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </span>
+                          <ChevronRight className="h-4 w-4 flex-none text-gray-300" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ))}
             </div>
