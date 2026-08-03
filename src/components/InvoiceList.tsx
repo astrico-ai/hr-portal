@@ -10,6 +10,7 @@ import { generateInvoiceNumber } from '../lib/invoiceData';
 import { BANK_ACCOUNTS, getBank } from '../lib/invoiceConfig';
 import { logAudit } from '../lib/audit';
 import GstExport from './GstExport';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ProjectWithClient {
   project: Project;
@@ -41,6 +42,7 @@ const InvoiceList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('projects');
   const [clientFilter, setClientFilter] = useState<string>('ALL');
   const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
@@ -128,6 +130,7 @@ const InvoiceList = () => {
 
   const handleApprove = async (itemId: number) => {
     try {
+      if (!isAdmin) { alert('Only the admin can approve invoices.'); return; }
       const item = approvalItems.find(i => i.id === itemId);
       if (!item) return;
 
@@ -262,6 +265,7 @@ const InvoiceList = () => {
               </span>
             )}
           </button>
+          {isAdmin && (
           <button
             onClick={() => setActiveTab('approve')}
             className={`
@@ -285,6 +289,7 @@ const InvoiceList = () => {
               </span>
             )}
           </button>
+          )}
           <button
             onClick={() => setActiveTab('export')}
             className={`
