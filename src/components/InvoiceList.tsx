@@ -42,7 +42,7 @@ const InvoiceList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const { isAdmin } = useAuth();
+  const { isAdmin, can } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('projects');
   const [clientFilter, setClientFilter] = useState<string>('ALL');
   const [approvingItemId, setApprovingItemId] = useState<number | null>(null);
@@ -290,6 +290,7 @@ const InvoiceList = () => {
             )}
           </button>
           )}
+          {can('invoices.export') && (
           <button
             onClick={() => setActiveTab('export')}
             className={`
@@ -302,6 +303,7 @@ const InvoiceList = () => {
           >
             GST Export
           </button>
+          )}
         </nav>
       </div>
 
@@ -314,6 +316,7 @@ const InvoiceList = () => {
                 A list of all projects and their billable items. Click on a project to view details.
               </p>
             </div>
+            {can('invoices.create') && (
             <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
               <button
                 onClick={() => setIsProjectModalOpen(true)}
@@ -323,6 +326,7 @@ const InvoiceList = () => {
                 New Project
               </button>
             </div>
+            )}
           </div>
 
           <div className="mt-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">

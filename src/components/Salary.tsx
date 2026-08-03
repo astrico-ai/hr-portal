@@ -4,6 +4,7 @@ import {
   getEmployees, updateEmployee, updateEmployeeSalary, bulkUpdateSalaries, type Employee,
 } from '../lib/employees';
 import { downloadSalarySheet, downloadSalaryTemplate, parseSalaryTemplate } from '../lib/salarySheet';
+import { useAuth } from '../contexts/AuthContext';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -15,6 +16,9 @@ const bankType = (ifsc?: string | null) => ((ifsc || '').trim().toUpperCase().st
 const maskAccount = (acc?: string | null) => { const s = String(acc || ''); return s.length > 4 ? `•••• ${s.slice(-4)}` : '••••'; };
 
 const Salary: React.FC = () => {
+  const { can } = useAuth();
+  const canEdit = can('salary.edit');
+  const canExport = can('salary.export');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSalaryId, setEditingSalaryId] = useState<number | null>(null);
@@ -121,9 +125,11 @@ const Salary: React.FC = () => {
                 {years.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
-            <button onClick={handleDownloadSheet} className="btn btn-primary">
-              <Download className="h-4 w-4" /> Download sheet
-            </button>
+            {canExport && (
+              <button onClick={handleDownloadSheet} className="btn btn-primary">
+                <Download className="h-4 w-4" /> Download sheet
+              </button>
+            )}
           </div>
           <p className="mt-3 text-xs text-gray-400">
             {active.length} employees · total {formatCurrency(totalPayout)}. Bank-format Excel,
@@ -142,12 +148,17 @@ const Salary: React.FC = () => {
             amounts in Excel, then upload it back to update everyone at once.
           </p>
           <div className="flex flex-wrap gap-3">
-            <button onClick={() => downloadSalaryTemplate(employees)} className="btn btn-secondary">
-              <Download className="h-4 w-4" /> Download template
-            </button>
-            <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
-              <Upload className="h-4 w-4" /> Upload template
-            </button>
+            {canExport && (
+              <button onClick={() => downloadSalaryTemplate(employees)} className="btn btn-secondary">
+                <Download className="h-4 w-4" /> Download template
+              </button>
+            )}
+            {canEdit && (
+              <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
+                <Upload className="h-4 w-4" /> Upload template
+              </button>
+            )}
+            {!canExport && !canEdit && <p className="text-sm text-gray-400">View-only access.</p>}
             <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
           </div>
         </div>
@@ -186,7 +197,7 @@ const Salary: React.FC = () => {
                       <td className="px-3 py-3 font-mono text-xs text-gray-600">{emp.ifsc || '—'}</td>
                       <td className="px-3 py-3 font-mono text-xs text-gray-600">{maskAccount(emp.account_number)}</td>
                       <td className="px-3 py-3 text-right">
-                        {editingSalaryId === emp.id ? (
+                        {canEdit && editingSalaryId === emp.id ? (
                           <div className="flex items-center justify-end gap-1">
                             <span className="text-xs text-gray-400">₹</span>
                             <input
@@ -198,7 +209,7 @@ const Salary: React.FC = () => {
                               className="form-input w-28 py-1 text-right text-sm font-semibold"
                             />
                           </div>
-                        ) : (
+                        ) : canEdit ? (
                           <button
                             onClick={() => setEditingSalaryId(emp.id!)}
                             className="text-sm font-semibold tracking-widest text-gray-400 hover:text-primary-600"
@@ -206,15 +217,19 @@ const Salary: React.FC = () => {
                           >
                             ••••••
                           </button>
+                        ) : (
+                          <span className="text-sm font-semibold tracking-widest text-gray-400">••••••</span>
                         )}
                       </td>
                       <td className="px-3 py-3 text-center">
                         <span className="badge bg-white ring-gray-200 text-gray-500">{bankType(emp.ifsc)}</span>
                       </td>
                       <td className="px-6 py-3 text-right">
-                        <button onClick={() => openBankEdit(emp)} className="btn btn-ghost btn-sm text-gray-400 hover:text-primary-600" title="Edit bank details">
-                          <Pencil className="h-4 w-4" />
-                        </button>
+                        {canEdit && (
+                          <button onClick={() => openBankEdit(emp)} className="btn btn-ghost btn-sm text-gray-400 hover:text-primary-600" title="Edit bank details">
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

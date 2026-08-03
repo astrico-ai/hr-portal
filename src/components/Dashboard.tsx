@@ -38,6 +38,7 @@ import OneTimeChart from './OneTimeChart';
 import ReceivablesAging from './ReceivablesAging';
 import NextDueInvoices from './NextDueInvoices';
 import { getBillableItems, getClients, getProjects } from '../lib/storage';
+import { useAuth } from '../contexts/AuthContext';
 import { getFinancialYearDates, getCurrentQuarter, getLastSixMonths, formatCurrency } from '../utils/dateUtils';
 import type { BillableItem, Client, Project } from '../types';
 
@@ -263,6 +264,10 @@ const Dashboard = () => {
   const [endInput, setEndInput] = useState('');
 
   const [selectedRevenueType, setSelectedRevenueType] = useState<RevenueType>('MRR');
+  const { can } = useAuth();
+  const showRevenue = can('dashboard.revenue');
+  const showReceivables = can('dashboard.receivables');
+  const showLicenses = can('dashboard.licenses');
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -1300,6 +1305,7 @@ const Dashboard = () => {
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {showRevenue && (<>
         {/* 1. Total Revenue */}
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 shadow-sm ring-1 ring-blue-200 rounded-lg p-6 relative overflow-hidden">
           <div className="absolute right-0 top-0 mt-4 mr-4 text-blue-400">
@@ -1397,7 +1403,9 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+        </>)}
 
+        {showReceivables && (<>
         {/* 5. Outstanding Amount */}
         <div className="bg-gradient-to-br from-amber-50 to-amber-100 shadow-sm ring-1 ring-amber-200 rounded-lg p-6 relative overflow-hidden">
           <div className="absolute right-0 top-0 mt-4 mr-4 text-amber-400">
@@ -1434,7 +1442,9 @@ const Dashboard = () => {
             )}
           </div>
         </div>
+        </>)}
 
+        {showRevenue && (<>
         {/* 8. Average MRR per Client (average ticket size) */}
         <div className="bg-gradient-to-br from-sky-50 to-sky-100 shadow-sm ring-1 ring-sky-200 rounded-lg p-6 relative overflow-hidden">
           <div className="absolute right-0 top-0 mt-4 mr-4 text-sky-400">
@@ -1455,31 +1465,40 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+        </>)}
       </div>
 
       {/* Next due license invoices — actionable */}
+      {showReceivables && (
       <div className="mb-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-6">Next Due Invoices</h2>
         <NextDueInvoices projects={projects} clients={clients} billableItems={billableItems} />
       </div>
+      )}
 
       {/* Accounts receivable aging */}
+      {showReceivables && (
       <div className="mb-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-6">Accounts Receivable</h2>
         <ReceivablesAging projects={projects} clients={clients} billableItems={billableItems} />
       </div>
+      )}
 
       {/* License invoicing & payments Gantt */}
+      {showLicenses && (
       <div className="mb-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-6">License Projects — Invoicing &amp; Payments</h2>
         <LicenseGantt projects={projects} clients={clients} billableItems={billableItems} />
       </div>
+      )}
 
       {/* One-time invoicing & payments chart */}
+      {showRevenue && (
       <div className="mb-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-6">One-Time Revenue — Invoicing &amp; Payments</h2>
         <OneTimeChart projects={projects} clients={clients} billableItems={billableItems} />
       </div>
+      )}
 
     </div>
   );

@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Users, Plus, Trash2, X, Pencil } from 'lucide-react';
 import { getEmployees, saveEmployee, updateEmployee, setEmployeeActive, deleteEmployee, type Employee } from '../lib/employees';
+import { useAuth } from '../contexts/AuthContext';
 
 const emptyForm = { employee_id: '', name: '', email: '', phone: '' };
 
 const HRCenter: React.FC = () => {
+  const { can } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -64,9 +66,11 @@ const HRCenter: React.FC = () => {
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">HR Center</h1>
           <p className="mt-1 text-sm text-gray-500">Employee directory & profiles</p>
         </div>
-        <button onClick={openAdd} className="btn btn-primary btn-sm">
-          <Plus className="h-4 w-4" /> Add Employee
-        </button>
+        {can('hr.create') && (
+          <button onClick={openAdd} className="btn btn-primary btn-sm">
+            <Plus className="h-4 w-4" /> Add Employee
+          </button>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -115,12 +119,16 @@ const HRCenter: React.FC = () => {
                         </button>
                       </td>
                       <td className="px-6 py-3 text-right">
-                        <button onClick={() => openEdit(e)} className="btn btn-ghost btn-sm text-gray-400 hover:text-primary-600" title="Edit">
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => handleDelete(e)} className="btn btn-ghost btn-sm text-gray-400 hover:text-red-600" title="Remove">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {can('hr.edit') && (
+                          <button onClick={() => openEdit(e)} className="btn btn-ghost btn-sm text-gray-400 hover:text-primary-600" title="Edit">
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
+                        {can('hr.delete') && (
+                          <button onClick={() => handleDelete(e)} className="btn btn-ghost btn-sm text-gray-400 hover:text-red-600" title="Remove">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

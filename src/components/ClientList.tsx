@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { getClients, deleteClient, updateClient } from '../lib/clients';
+import { useAuth } from '../contexts/AuthContext';
 import type { Client } from '../types';
 
 interface StatusToggleProps {
@@ -38,6 +39,7 @@ const todayYMD = () => {
 };
 
 const ClientList = () => {
+  const { can } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -145,6 +147,7 @@ const ClientList = () => {
             A list of all clients including their legal name, GST number, contact details, and actions.
           </p>
         </div>
+        {can('clients.create') && (
         <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
           <Link
             to="/clients/new"
@@ -154,6 +157,7 @@ const ClientList = () => {
             Add Client
           </Link>
         </div>
+        )}
       </div>
 
       <div className="mt-8 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-lg">
@@ -199,6 +203,7 @@ const ClientList = () => {
                   <td colSpan={5} className="py-8">
                     <div className="text-center">
                       <p className="text-sm text-gray-500">No clients found</p>
+                      {can('clients.create') && (
                       <div className="mt-4">
                         <Link
                           to="/clients/new"
@@ -208,6 +213,7 @@ const ClientList = () => {
                           Add your first client
                         </Link>
                       </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -235,6 +241,7 @@ const ClientList = () => {
                     </td>
                     <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                       <div className="flex justify-end gap-2">
+                        {can('clients.edit') && (
                         <button
                           onClick={(e) => handleEditClick(e, client)}
                           disabled={!client.is_active}
@@ -244,6 +251,8 @@ const ClientList = () => {
                           <Pencil className="h-4 w-4" />
                           <span className="sr-only">Edit</span>
                         </button>
+                        )}
+                        {can('clients.delete') && (
                         <button
                           onClick={(e) => handleDelete(e, client.id)}
                           className="text-red-600 hover:text-red-900"
@@ -252,6 +261,7 @@ const ClientList = () => {
                           <Trash2 className="h-4 w-4" />
                           <span className="sr-only">Delete</span>
                         </button>
+                        )}
                       </div>
                     </td>
                   </tr>
