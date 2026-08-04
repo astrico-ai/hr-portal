@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { supabase } from '../lib/supabaseClient';
@@ -19,9 +19,13 @@ const AuthContext = createContext<AuthContextType | null>(null);
 // When the app runs on Supabase, auth runs on Supabase too.
 const useSupabaseAuth = (process.env.REACT_APP_DATA_BACKEND || 'firebase').toLowerCase() === 'supabase';
 
-// The hardcoded super-admin — always allowed in (failsafe so a bad/missing
-// app_users row can never lock the owner out). Mirrors is_app_admin() in SQL.
+// Hardcoded super-admin — failsafe so a bad/missing app_users row can't lock out
+// the owner. Mirrors is_app_admin() in SQL.
 const ADMIN_EMAIL = 'vraj@astrico.ai';
+
+// Session policy.
+const INACTIVITY_MS = 30 * 60 * 1000;       // log out after 30 min idle
+const MAX_SESSION_MS = 24 * 60 * 60 * 1000; // absolute daily logout regardless of activity
 
 export function useAuth() {
   const context = useContext(AuthContext);
@@ -35,6 +39,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
 
+  const sessionStartRef = useRef(0);
+  const lastActivityRef = useRef(0);
+
+  const logout = useCallback(() => {
+    sessionStartRef.current = 0;
+    localStorage.removeItem('userEmail');
+    setUserEmail(null);
+    setPermissions([]);
+    setIsAdmin(false);
+    if (useSupabaseAuth) supabase.auth.signOut().catch(() => {});
+    else signOut(auth).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const clearUser = () => {
       setUserEmail(null);
@@ -44,8 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     if (useSupabaseAuth) {
-      // Apply a Supabase session: the user must exist & be active in app_users,
-      // otherwise they're signed out. Their permissions come from that row.
+      // Apply a Supabase session: the user must exist & be active in app_users.
       const apply = async (email?: string | null) => {
         if (!email) { clearUser(); return; }
         const { data, error } = await supabase
@@ -55,11 +71,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .maybeSingle();
         if (!error && data && data.is_active) {
           setUserEmail(email);
-          localStorage.setItem('userEmail', email); // for the audit log
+          localStorage.setItem('userEmail', email);
           setIsAdmin(!!data.is_admin);
           setPermissions(Array.isArray(data.permissions) ? data.permissions : []);
         } else if (email.toLowerCase() === ADMIN_EMAIL) {
-          // Failsafe: the owner is always admin, even if the row/table is absent.
           setUserEmail(email);
           localStorage.setItem('userEmail', email);
           setIsAdmin(true);
@@ -70,11 +85,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           alert(`${email} is not authorized to use this app.\nAsk vraj@astrico.ai to grant access.`);
         }
       };
-      supabase.auth.getSession().then(({ data }) =>
-        apply(data.session?.user?.email).finally(() => setLoading(false))
-      );
-      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-        apply(session?.user?.email);
+
+      // Rule: log out on a hard refresh. A persisted session is only honoured when
+      // this page load is the OAuth return (fresh sign-in); any other fresh load
+      // (refresh / reopen) signs out, so the session never survives a reload.
+      const oauthReturn =
+        window.location.search.includes('code=') || window.location.hash.includes('access_token');
+
+      const init = async () => {
+        const { data } = await supabase.auth.getSession();
+        if (oauthReturn) {
+          await apply(data.session?.user?.email);
+        } else {
+          if (data.session) await supabase.auth.signOut().catch(() => {});
+          clearUser();
+        }
+        setLoading(false);
+      };
+      init();
+
+      const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+        // Ignore INITIAL_SESSION (handled by init above, and we don't resume on reload).
+        if (event === 'SIGNED_OUT') clearUser();
+        else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') apply(session?.user?.email);
       });
       return () => sub.subscription.unsubscribe();
     }
@@ -92,6 +125,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return () => unsubscribe();
   }, []);
+
+  // Inactivity (30 min) + absolute daily logout, while signed in.
+  useEffect(() => {
+    if (!userEmail) return;
+    if (!sessionStartRef.current) sessionStartRef.current = Date.now();
+    lastActivityRef.current = Date.now();
+
+    const bump = () => { lastActivityRef.current = Date.now(); };
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach((e) => window.addEventListener(e, bump, { passive: true }));
+
+    const interval = setInterval(() => {
+      const t = Date.now();
+      if (t - lastActivityRef.current > INACTIVITY_MS || t - sessionStartRef.current > MAX_SESSION_MS) {
+        logout();
+      }
+    }, 20000);
+
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, bump));
+      clearInterval(interval);
+    };
+  }, [userEmail, logout]);
 
   const loginWithGoogle = async () => {
     if (useSupabaseAuth) {
@@ -120,15 +176,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       throw e;
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem('userEmail');
-    setUserEmail(null);
-    setPermissions([]);
-    setIsAdmin(false);
-    if (useSupabaseAuth) supabase.auth.signOut().catch(() => {});
-    else signOut(auth).catch(() => {});
   };
 
   const can = (cap: string) => isAdmin || permissions.includes(cap);
