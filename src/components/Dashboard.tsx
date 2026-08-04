@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   FileText, 
@@ -20,6 +20,8 @@ import {
   Calendar, 
   ChevronDown,
   ArrowLeft,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -268,6 +270,20 @@ const Dashboard = () => {
   const showRevenue = can('dashboard.revenue');
   const showReceivables = can('dashboard.receivables');
   const showLicenses = can('dashboard.licenses');
+
+  // Numbers are blurred by default; a toggle reveals them for 30 seconds only.
+  const [numbersVisible, setNumbersVisible] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toggleNumbers = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    if (numbersVisible) {
+      setNumbersVisible(false);
+      return;
+    }
+    setNumbersVisible(true);
+    hideTimer.current = setTimeout(() => setNumbersVisible(false), 30000);
+  };
+  useEffect(() => () => { if (hideTimer.current) clearTimeout(hideTimer.current); }, []);
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -1242,8 +1258,18 @@ const Dashboard = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header with Date Filter */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Financial Overview</h1>
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold text-gray-900">Financial Overview</h1>
+          <button
+            onClick={toggleNumbers}
+            className="btn btn-secondary btn-sm"
+            title={numbersVisible ? 'Hide numbers' : 'Reveal for 30 seconds'}
+          >
+            {numbersVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {numbersVisible ? 'Hide' : 'Show numbers'}
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => updateDateFilter('month')}
@@ -1303,6 +1329,8 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Company numbers — blurred by default; revealed for 30s via the toggle */}
+      <div className={`transition duration-200 ${numbersVisible ? '' : 'select-none blur-md'}`}>
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {showRevenue && (<>
@@ -1499,6 +1527,7 @@ const Dashboard = () => {
         <OneTimeChart projects={projects} clients={clients} billableItems={billableItems} />
       </div>
       )}
+      </div>
 
     </div>
   );
