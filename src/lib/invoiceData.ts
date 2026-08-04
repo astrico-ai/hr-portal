@@ -158,13 +158,13 @@ export const buildInvoiceData = (
   const total = Math.round(raw);
   const roundOff = round2(total - raw);
 
-  // Signature caption date+time, e.g. "2026.06.26 17:08:10". Date comes from the
-  // invoice/approval date; time is the moment the PDF is generated.
+  // Signature caption date+time — the moment the PDF is generated/signed (today),
+  // e.g. "2026.08.04 17:08:10".
   const pad = (n: number) => String(n).padStart(2, '0');
   const now = new Date();
-  const datePart = (item.invoice_date || '').replace(/-/g, '.'); // YYYY.MM.DD
+  const datePart = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`;
   const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  const signedOn = datePart ? `${datePart} ${timePart}` : '';
+  const signedOn = `${datePart} ${timePart}`;
 
   return {
     invoiceNo,
