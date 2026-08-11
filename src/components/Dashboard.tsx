@@ -1495,6 +1495,7 @@ const Dashboard = () => {
         </div>
         </>)}
       </div>
+      </div>
 
       {/* Next due license invoices — actionable */}
       {showReceivables && (
@@ -1527,7 +1528,6 @@ const Dashboard = () => {
         <OneTimeChart projects={projects} clients={clients} billableItems={billableItems} />
       </div>
       )}
-      </div>
 
     </div>
   );
