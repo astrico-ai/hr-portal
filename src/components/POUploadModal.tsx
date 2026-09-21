@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Upload } from 'lucide-react';
 import type { PurchaseOrderFormData } from '../types';
+import { CURRENCIES, isExportCurrency } from '../lib/invoiceConfig';
 
 interface POUploadModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ const POUploadModal: React.FC<POUploadModalProps> = ({ isOpen, onClose, onUpload
     po_number: '',
     po_value: 0,
     po_end_date: '',
+    currency: 'INR',
   });
 
   const handleDocumentSelect = (file: File) => {
@@ -147,19 +149,40 @@ const POUploadModal: React.FC<POUploadModalProps> = ({ isOpen, onClose, onUpload
               </div>
 
               <div>
+                <label htmlFor="currency" className="block text-sm font-medium text-gray-700">
+                  Currency <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="currency"
+                  value={formData.currency || 'INR'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
+                  className="form-select mt-1 block w-full"
+                >
+                  {CURRENCIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+                {isExportCurrency(formData.currency) && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Invoices raised against this PO will be foreign-currency exports ({formData.currency}).
+                  </p>
+                )}
+              </div>
+
+              <div>
                 <label htmlFor="po_value" className="block text-sm font-medium text-gray-700">
                   PO Value <span className="text-red-500">*</span>
                 </label>
                 <div className="mt-1 relative rounded-md shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">₹</span>
+                    <span className="text-gray-500 sm:text-sm">{isExportCurrency(formData.currency) ? formData.currency : '₹'}</span>
                   </div>
                   <input
                     type="number"
                     id="po_value"
                     value={formData.po_value}
                     onChange={(e) => setFormData(prev => ({ ...prev, po_value: parseFloat(e.target.value) }))}
-                    className="form-input block w-full pl-7"
+                    className={`form-input block w-full ${isExportCurrency(formData.currency) ? 'pl-12' : 'pl-7'}`}
                     min="0"
                     step="0.01"
                     required

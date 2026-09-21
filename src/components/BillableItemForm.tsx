@@ -48,6 +48,8 @@ const BillableItemForm = () => {
     ...(prefill || {}),
   });
   const isForeign = isExportCurrency(formData.currency);
+  // When a real PO is selected, the invoice currency is fixed by the PO.
+  const poLocksCurrency = !!formData.po_number && formData.po_number !== 'NO_PO_REQUIRED';
   // Line items (description + cost). Seeded from a prefill or a single blank row.
   const [lineItems, setLineItems] = useState<BillableLineItem[]>(
     prefill?.line_items?.length
@@ -220,13 +222,16 @@ const BillableItemForm = () => {
                       currency: e.target.value,
                       exchange_rate: isExportCurrency(e.target.value) ? prev.exchange_rate : null,
                     }))}
-                    className="form-select mt-1 w-full"
+                    disabled={poLocksCurrency}
+                    className="form-select mt-1 w-full disabled:bg-gray-50 disabled:text-gray-500"
                   >
                     {CURRENCIES.map(c => (
                       <option key={c.code} value={c.code}>{c.label}</option>
                     ))}
                   </select>
-                  {isForeign && (
+                  {poLocksCurrency ? (
+                    <p className="mt-1 text-xs text-gray-500">Set by the selected PO’s currency.</p>
+                  ) : isForeign && (
                     <p className="mt-1 text-xs text-gray-500">
                       Export invoice — zero-rated (no GST), numbered EX-…
                     </p>
@@ -314,12 +319,20 @@ const BillableItemForm = () => {
                   value={formData.po_number || ''}
                   onChange={(e) => {
                     const selectedPO = purchaseOrders.find(po => po.po_number === e.target.value);
-                    setFormData(prev => ({
-                      ...prev,
-                      po_number: e.target.value || null,
-                      po_end_date: selectedPO?.po_end_date || null,
-                      po_document_url: selectedPO?.po_document_url || null
-                    }));
+                    setFormData(prev => {
+                      // A real PO forces the invoice currency to match it (so
+                      // utilization is tracked in one currency); "No PO"/none lets
+                      // the user pick the currency freely.
+                      const poCurrency = selectedPO ? (selectedPO.currency || 'INR') : prev.currency;
+                      return {
+                        ...prev,
+                        po_number: e.target.value || null,
+                        po_end_date: selectedPO?.po_end_date || null,
+                        po_document_url: selectedPO?.po_document_url || null,
+                        currency: poCurrency,
+                        exchange_rate: isExportCurrency(poCurrency) ? prev.exchange_rate : null,
+                      };
+                    });
                   }}
                   required
                   className="form-select mt-1 w-full"
@@ -328,7 +341,7 @@ const BillableItemForm = () => {
                   <option value="NO_PO_REQUIRED">No PO Required</option>
                   {availablePOs.map(po => (
                     <option key={po.id} value={po.po_number}>
-                      {po.name} - ₹{po.remainingAmount.toLocaleString()} available
+                      {po.name} - {isExportCurrency(po.currency) ? `${po.currency} ` : '₹'}{po.remainingAmount.toLocaleString()} available
                     </option>
                   ))}
                 </select>

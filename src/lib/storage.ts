@@ -326,6 +326,7 @@ export async function savePurchaseOrder(formData: PurchaseOrderFormData): Promis
       po_end_date: formData.po_end_date,
       po_value: formData.po_value,
       po_document_url: poDocumentBase64 || '',
+      currency: formData.currency || 'INR',
       created_at: new Date().toISOString()
     };
     

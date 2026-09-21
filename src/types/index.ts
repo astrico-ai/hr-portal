@@ -157,6 +157,9 @@ export interface PurchaseOrder {
   po_value: number;
   po_document_url: string;
   created_at: string;
+  // Currency of po_value (defaults to INR). Invoices raised against the PO
+  // inherit this currency so utilization is tracked in one currency.
+  currency?: string | null;
 }
 
 export interface PurchaseOrderFormData {
@@ -166,4 +169,5 @@ export interface PurchaseOrderFormData {
   po_end_date: string;
   po_value: number;
   po_document: File;
+  currency?: string | null;
 }

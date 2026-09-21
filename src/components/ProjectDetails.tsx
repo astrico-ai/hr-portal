@@ -538,12 +538,18 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                   value={formData.po_number || ''}
                   onChange={(e) => {
                     const selectedPO = purchaseOrders.find(po => po.po_number === e.target.value);
-                    setFormData(prev => ({
-                      ...prev,
-                      po_number: e.target.value || null,
-                      po_end_date: selectedPO?.po_end_date || null,
-                      po_document_url: selectedPO?.po_document_url || null // Link PO document
-                    }));
+                    setFormData(prev => {
+                      // A real PO fixes the invoice currency to match it.
+                      const poCurrency = selectedPO ? (selectedPO.currency || 'INR') : prev.currency;
+                      return {
+                        ...prev,
+                        po_number: e.target.value || null,
+                        po_end_date: selectedPO?.po_end_date || null,
+                        po_document_url: selectedPO?.po_document_url || null, // Link PO document
+                        currency: poCurrency,
+                        exchange_rate: isExportCurrency(poCurrency) ? prev.exchange_rate : null,
+                      };
+                    });
                   }}
                   className="form-select mt-1 w-full"
                 >
@@ -551,7 +557,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                   <option value="NO_PO_REQUIRED">No PO Required</option>
                   {availablePOs.map(po => (
                     <option key={po.id} value={po.po_number}>
-                      {po.name} - ₹{po.remainingAmount.toLocaleString()} available
+                      {po.name} - {isExportCurrency(po.currency) ? `${po.currency} ` : '₹'}{po.remainingAmount.toLocaleString()} available
                     </option>
                   ))}
                 </select>
@@ -971,17 +977,32 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
               />
             </div>
             <div>
+              <label htmlFor="po_currency" className="block text-sm font-medium text-gray-700">
+                Currency <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="po_currency"
+                value={formData.currency || 'INR'}
+                onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
+                className="form-select mt-1 w-full"
+              >
+                {CURRENCIES.map(c => (
+                  <option key={c.code} value={c.code}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label htmlFor="po_value" className="block text-sm font-medium text-gray-700">
                 PO Value (without GST) <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">₹</span>
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">{isExportCurrency(formData.currency) ? formData.currency : '₹'}</span>
                 <input
                   type="number"
                   id="po_value"
                   value={formData.po_value || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, po_value: parseFloat(e.target.value) }))}
-                  className="form-input pl-7 w-full"
+                  className={`form-input w-full ${isExportCurrency(formData.currency) ? 'pl-12' : 'pl-7'}`}
                   required
                 />
               </div>
@@ -1306,6 +1327,7 @@ const ProjectDetails: React.FC = () => {
         po_number: newPO.po_number,
         po_end_date: newPO.po_end_date,
         po_value: newPO.po_value,
+        currency: newPO.currency || 'INR',
         po_document: poFile
       };
 
@@ -2022,16 +2044,30 @@ const ProjectDetails: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Currency <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={newPO.currency || 'INR'}
+                          onChange={(e) => setNewPO(prev => ({ ...prev, currency: e.target.value }))}
+                          className="form-select w-full"
+                        >
+                          {CURRENCIES.map(c => (
+                            <option key={c.code} value={c.code}>{c.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           PO Value (without GST) <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
-                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">₹</span>
+                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">{isExportCurrency(newPO.currency) ? newPO.currency : '₹'}</span>
                           <input
                             type="number"
                             placeholder="Enter PO value"
                             value={newPO.po_value || ''}
                             onChange={(e) => setNewPO(prev => ({ ...prev, po_value: parseFloat(e.target.value) }))}
-                            className="form-input pl-7 w-full"
+                            className={`form-input w-full ${isExportCurrency(newPO.currency) ? 'pl-12' : 'pl-7'}`}
                             required
                           />
                         </div>
@@ -2107,7 +2143,7 @@ const ProjectDetails: React.FC = () => {
                               </div>
                               <div>
                                 <span className="text-gray-500">Value:</span>
-                                <span className="ml-1 text-gray-900">₹{(po.po_value ?? 0).toLocaleString()}</span>
+                                <span className="ml-1 text-gray-900">{fmtItemAmount({ amount: po.po_value, currency: po.currency })}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">End Date:</span>
@@ -2129,7 +2165,7 @@ const ProjectDetails: React.FC = () => {
                               Utilization: {Math.round(percentage)}%
                             </span>
                             <span className="text-gray-500">
-                              ₹{(amount ?? 0).toLocaleString()} used
+                              {fmtItemAmount({ amount: amount ?? 0, currency: po.currency })} used
                             </span>
                           </div>
                           <div className="overflow-hidden h-1.5 text-xs flex rounded bg-gray-200">
