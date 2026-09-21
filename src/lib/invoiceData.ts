@@ -87,6 +87,8 @@ export interface InvoiceData {
   invoiceNo: string;
   invoiceDate: string;
   signedOn: string; // e.g. "2026.06.26" — caption under the signature stamp
+  docType?: 'invoice' | 'credit_note';
+  refInvoiceNo?: string; // original invoice number (credit notes only)
   buyerOrderNo: string;
   buyerOrderDate: string;
   seller: typeof SELLER;
@@ -169,6 +171,7 @@ export const buildInvoiceData = (
     invoiceNo,
     invoiceDate: formatInvoiceDate(item.invoice_date),
     signedOn,
+    docType: 'invoice',
     buyerOrderNo: item.po_number && item.po_number !== 'NO_PO_REQUIRED' ? item.po_number : '',
     buyerOrderDate: '',
     seller: SELLER,
@@ -194,4 +197,28 @@ export const buildInvoiceData = (
     taxAmountInWords: taxInWords(taxAmount),
     bank,
   };
+};
+
+// Build a credit-note document from a credit note + its original invoice. Reuses
+// the invoice builder (same tax treatment) with the credited amount.
+export const buildCreditNoteData = (
+  cn: { credit_note_number: string; cn_date: string; amount: number; reason?: string | null },
+  invoice: BillableItem,
+  project: Project,
+  client: Client,
+  bank: BankAccount
+): InvoiceData => {
+  const synthItem: BillableItem = {
+    ...invoice,
+    name: `Credit Note for ${invoice.invoice_number ?? ''}`,
+    amount: cn.amount,
+    invoice_date: cn.cn_date,
+    invoice_generation_date: cn.cn_date,
+    line_items: [{
+      description: `Credit for Invoice ${invoice.invoice_number ?? ''}${cn.reason ? ' — ' + cn.reason : ''}`,
+      amount: cn.amount,
+    }],
+  };
+  const data = buildInvoiceData(synthItem, project, client, bank, cn.credit_note_number);
+  return { ...data, docType: 'credit_note', refInvoiceNo: invoice.invoice_number ?? undefined };
 };

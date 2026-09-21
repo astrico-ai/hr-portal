@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { FileSpreadsheet, Download } from 'lucide-react';
 import type { BillableItem, Client, Project } from '../types';
 import { invoiceMonths, buildGstRows, exportGstExcel } from '../lib/gstExport';
+import { getCreditNotes, type CreditNote } from '../lib/creditNotes';
 
 interface GstExportProps {
   projects: Project[] | { id: number; client_id: number; name: string }[];
@@ -19,15 +20,20 @@ const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 
 const GstExport: React.FC<GstExportProps> = ({ projects, clients, billableItems }) => {
-  const months = useMemo(() => invoiceMonths(billableItems), [billableItems]);
-  const [month, setMonth] = useState<string>(months[0] || 'ALL');
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+  useEffect(() => { getCreditNotes().then(setCreditNotes); }, []);
+
+  const months = useMemo(() => invoiceMonths(billableItems, creditNotes), [billableItems, creditNotes]);
+  const [month, setMonth] = useState<string>('ALL');
+  useEffect(() => { if (months.length && month === 'ALL') setMonth(months[0]); }, [months]); // default to latest
 
   const rows = useMemo(
-    () => buildGstRows(billableItems, projects as Project[], clients, month),
-    [billableItems, projects, clients, month]
+    () => buildGstRows(billableItems, projects as Project[], clients, month, creditNotes),
+    [billableItems, projects, clients, month, creditNotes]
   );
   const taxable = rows.reduce((s, r) => s + r.taxable, 0);
   const tax = rows.reduce((s, r) => s + r.cgstAmt + r.sgstAmt + r.igstAmt, 0);
+  const cnCount = rows.filter((r) => (r.invoiceNo || '').startsWith('CN-')).length;
 
   const handleExport = () => {
     if (rows.length === 0) return;
@@ -68,8 +74,8 @@ const GstExport: React.FC<GstExportProps> = ({ projects, clients, billableItems 
 
       <div className="mt-4 flex flex-wrap gap-6 border-t border-gray-100 pt-4 text-sm">
         <div>
-          <p className="text-gray-400">Invoices</p>
-          <p className="font-semibold text-gray-900">{rows.length}</p>
+          <p className="text-gray-400">Documents</p>
+          <p className="font-semibold text-gray-900">{rows.length - cnCount} inv{cnCount > 0 ? ` · ${cnCount} CN` : ''}</p>
         </div>
         <div>
           <p className="text-gray-400">Taxable value</p>

@@ -8,9 +8,11 @@ import { getClients } from '../lib/clients';
 import { handleDocumentClick } from '../utils/documentUtils';
 import { pdf } from '@react-pdf/renderer';
 import InvoiceDocument from './InvoiceDocument';
-import { buildInvoiceData } from '../lib/invoiceData';
+import { buildInvoiceData, buildCreditNoteData } from '../lib/invoiceData';
 import { getBank } from '../lib/invoiceConfig';
 import { logAudit } from '../lib/audit';
+import { getCreditNotes, saveCreditNote, generateCreditNoteNumber, type CreditNote } from '../lib/creditNotes';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ProjectInfoProps {
   project: Project;
@@ -943,8 +945,13 @@ const ProjectDetails: React.FC = () => {
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
+  const { isAdmin } = useAuth();
   const [billableItems, setBillableItems] = useState<BillableItem[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+  const [issuingCN, setIssuingCN] = useState<BillableItem | null>(null);
+  const [cnForm, setCnForm] = useState({ amount: '', reason: '', date: '' });
+  const [cnSaving, setCnSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'billable' | 'po'>('billable');
   const [newPO, setNewPO] = useState<Partial<PurchaseOrder>>({});
@@ -1002,6 +1009,7 @@ const ProjectDetails: React.FC = () => {
       setClient(client);
       setBillableItems(billableItems.filter(item => item.project_id === projectId));
       setPurchaseOrders(purchaseOrders);
+      getCreditNotes().then(setCreditNotes).catch(() => {});
     } catch (error) {
       console.error('Error loading data:', error);
       navigate('/invoices');
@@ -1126,6 +1134,88 @@ const ProjectDetails: React.FC = () => {
       console.error('Failed to generate invoice:', error);
       alert('Failed to generate the invoice PDF. See console for details.');
     }
+  };
+
+  // ---- Credit notes (admin only) ----
+  const creditNoteFor = (item: BillableItem) => creditNotes.find((cn) => cn.invoice_id === item.id);
+
+  const openIssueCN = (item: BillableItem) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setCnForm({ amount: String(item.amount ?? ''), reason: '', date: today });
+    setIssuingCN(item);
+  };
+
+  const handleSaveCN = async () => {
+    if (!issuingCN) return;
+    const amount = Number(cnForm.amount) || 0;
+    if (amount <= 0) { alert('Enter a valid credit amount.'); return; }
+    setCnSaving(true);
+    try {
+      const number = generateCreditNoteNumber(cnForm.date, creditNotes);
+      await saveCreditNote({
+        invoice_id: issuingCN.id,
+        invoice_number: issuingCN.invoice_number,
+        credit_note_number: number,
+        cn_date: cnForm.date,
+        amount,
+        reason: cnForm.reason,
+      });
+      logAudit('Credit note issued', `${number} · against ${issuingCN.invoice_number} · ₹${amount.toLocaleString()}`, issuingCN.id);
+      setIssuingCN(null);
+      setCreditNotes(await getCreditNotes());
+    } catch (err: any) {
+      alert('Failed to issue credit note: ' + (err?.message || err));
+    } finally {
+      setCnSaving(false);
+    }
+  };
+
+  const downloadCreditNote = async (cn: CreditNote, invoice: BillableItem) => {
+    if (!project || !client) return;
+    const bank = getBank(invoice.bank_account);
+    if (!bank) { alert('The original invoice has no bank assigned.'); return; }
+    try {
+      const data = buildCreditNoteData(cn, invoice, project, client, bank);
+      const blob = await pdf(<InvoiceDocument data={data} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${cn.credit_note_number}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to generate credit note:', error);
+      alert('Failed to generate the credit note PDF.');
+    }
+  };
+
+  // Credit-note action for an invoice row (admin only, raised/received invoices).
+  const renderCreditNoteActions = (item: BillableItem) => {
+    if (!isAdmin || !item.invoice_number) return null;
+    if (!['RAISED', 'RECEIVED'].includes(item.status)) return null;
+    const cn = creditNoteFor(item);
+    if (cn) {
+      return (
+        <button
+          onClick={() => downloadCreditNote(cn, item)}
+          className="text-amber-600 hover:text-amber-800"
+          title={`Credit note ${cn.credit_note_number} (₹${Number(cn.amount).toLocaleString()}) — download`}
+        >
+          <Receipt className="h-4 w-4" />
+        </button>
+      );
+    }
+    return (
+      <button
+        onClick={() => openIssueCN(item)}
+        className="text-gray-500 hover:text-amber-700"
+        title="Issue credit note"
+      >
+        <Receipt className="h-4 w-4" />
+      </button>
+    );
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1613,6 +1703,7 @@ const ProjectDetails: React.FC = () => {
                                     <Download className="h-4 w-4" />
                                   </button>
                                 )}
+                                {renderCreditNoteActions(item)}
                                 <button
                                   onClick={() => client.is_active ? setEditingItem(item) : null}
                                   className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -1716,6 +1807,7 @@ const ProjectDetails: React.FC = () => {
                                     <Download className="h-4 w-4" />
                                   </button>
                                 )}
+                                {renderCreditNoteActions(item)}
                                 <button
                                   onClick={() => client.is_active ? setEditingItem(item) : null}
                                   className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -2018,6 +2110,40 @@ const ProjectDetails: React.FC = () => {
           onSave={handleItemSave}
           onClose={() => setEditingItem(null)}
         />
+      )}
+
+      {issuingCN && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setIssuingCN(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-elevated" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Issue Credit Note</h3>
+              <button onClick={() => setIssuingCN(null)} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mb-4 text-xs text-gray-500">Against invoice <span className="font-medium text-gray-700">{issuingCN.invoice_number}</span> — number auto-generated on save.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="form-label">Credit amount (₹)</label>
+                <input type="number" className="form-input" value={cnForm.amount}
+                  onChange={(e) => setCnForm({ ...cnForm, amount: e.target.value })} />
+                <p className="mt-1 text-xs text-gray-400">Defaults to the full invoice value; edit for a partial credit.</p>
+              </div>
+              <div>
+                <label className="form-label">Date</label>
+                <input type="date" className="form-input" value={cnForm.date}
+                  onChange={(e) => setCnForm({ ...cnForm, date: e.target.value })} />
+              </div>
+              <div>
+                <label className="form-label">Reason</label>
+                <input className="form-input" value={cnForm.reason} placeholder="e.g. Cancellation, correction, discount"
+                  onChange={(e) => setCnForm({ ...cnForm, reason: e.target.value })} />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setIssuingCN(null)} className="btn btn-secondary">Cancel</button>
+                <button onClick={handleSaveCN} disabled={cnSaving} className="btn btn-primary">{cnSaving ? 'Issuing…' : 'Issue credit note'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {editingPO && (

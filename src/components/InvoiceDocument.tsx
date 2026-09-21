@@ -65,7 +65,7 @@ const InvoiceDocument: React.FC<{ data: InvoiceData }> = ({ data }) => {
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <Text style={s.title}>Tax Invoice</Text>
+        <Text style={s.title}>{data.docType === 'credit_note' ? 'Credit Note' : 'Tax Invoice'}</Text>
 
         <View style={s.box}>
           {/* Header: seller + invoice meta */}
@@ -95,7 +95,12 @@ const InvoiceDocument: React.FC<{ data: InvoiceData }> = ({ data }) => {
                 <View style={s.metaCell}><Text style={s.label}>Mode/Terms of Payment</Text></View>
               </View>
               <View style={s.metaRow}>
-                <View style={[s.metaCell, s.metaCellBorder]}><Text style={s.label}>Reference No. & Date.</Text></View>
+                <View style={[s.metaCell, s.metaCellBorder]}>
+                  <Text style={s.label}>Reference No. & Date.</Text>
+                  {data.docType === 'credit_note' && !!data.refInvoiceNo && (
+                    <Text style={s.value}>Inv: {data.refInvoiceNo}</Text>
+                  )}
+                </View>
                 <View style={s.metaCell}><Text style={s.label}>Other References</Text></View>
               </View>
               <View style={s.metaRow}>
@@ -289,7 +294,7 @@ const InvoiceDocument: React.FC<{ data: InvoiceData }> = ({ data }) => {
           </View>
         </View>
 
-        <Text style={s.footer}>This is a Computer Generated Invoice</Text>
+        <Text style={s.footer}>This is a Computer Generated {data.docType === 'credit_note' ? 'Credit Note' : 'Invoice'}</Text>
       </Page>
     </Document>
   );
