@@ -225,16 +225,24 @@ interface EditItemModalProps {
   billableItems: BillableItem[];
   onSave: (updatedItem: BillableItem, poDocument?: File, proposalDocument?: File, invoiceDocument?: File) => Promise<void>;
   onClose: () => void;
+  isAdmin?: boolean;
+  creditNote?: CreditNote;
+  onIssueCreditNote?: () => void;
+  onDownloadCreditNote?: () => void;
 }
 
-const EditItemModal: React.FC<EditItemModalProps> = ({ 
-  item, 
-  client, 
-  project, 
+const EditItemModal: React.FC<EditItemModalProps> = ({
+  item,
+  client,
+  project,
   purchaseOrders,
   billableItems,
-  onSave, 
-  onClose 
+  onSave,
+  onClose,
+  isAdmin,
+  creditNote,
+  onIssueCreditNote,
+  onDownloadCreditNote,
 }) => {
   const [formData, setFormData] = useState(item);
   const [poDocument, setPoDocument] = useState<File | null>(null);
@@ -762,6 +770,33 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
           </div>
         </form>
 
+        {isAdmin && ['RAISED', 'RECEIVED'].includes(item.status) && item.invoice_number && (
+          <div className="px-6 py-4 border-t border-gray-100">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Credit Note</h4>
+                {creditNote ? (
+                  <p className="text-xs text-gray-500">
+                    {creditNote.credit_note_number} · ₹{Number(creditNote.amount).toLocaleString()}
+                    {creditNote.reason ? ` · ${creditNote.reason}` : ''}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400">Issue a credit note against this invoice.</p>
+                )}
+              </div>
+              {creditNote ? (
+                <button type="button" onClick={onDownloadCreditNote} className="btn btn-secondary btn-sm">
+                  <Receipt className="h-4 w-4" /> Download CN
+                </button>
+              ) : (
+                <button type="button" onClick={onIssueCreditNote} className="btn btn-secondary btn-sm">
+                  <Receipt className="h-4 w-4" /> Issue Credit Note
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
           <button
             type="button"
@@ -1189,33 +1224,6 @@ const ProjectDetails: React.FC = () => {
       console.error('Failed to generate credit note:', error);
       alert('Failed to generate the credit note PDF.');
     }
-  };
-
-  // Credit-note action for an invoice row (admin only, raised/received invoices).
-  const renderCreditNoteActions = (item: BillableItem) => {
-    if (!isAdmin || !item.invoice_number) return null;
-    if (!['RAISED', 'RECEIVED'].includes(item.status)) return null;
-    const cn = creditNoteFor(item);
-    if (cn) {
-      return (
-        <button
-          onClick={() => downloadCreditNote(cn, item)}
-          className="text-amber-600 hover:text-amber-800"
-          title={`Credit note ${cn.credit_note_number} (₹${Number(cn.amount).toLocaleString()}) — download`}
-        >
-          <Receipt className="h-4 w-4" />
-        </button>
-      );
-    }
-    return (
-      <button
-        onClick={() => openIssueCN(item)}
-        className="text-gray-500 hover:text-amber-700"
-        title="Issue credit note"
-      >
-        <Receipt className="h-4 w-4" />
-      </button>
-    );
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1703,7 +1711,6 @@ const ProjectDetails: React.FC = () => {
                                     <Download className="h-4 w-4" />
                                   </button>
                                 )}
-                                {renderCreditNoteActions(item)}
                                 <button
                                   onClick={() => client.is_active ? setEditingItem(item) : null}
                                   className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -1807,7 +1814,6 @@ const ProjectDetails: React.FC = () => {
                                     <Download className="h-4 w-4" />
                                   </button>
                                 )}
-                                {renderCreditNoteActions(item)}
                                 <button
                                   onClick={() => client.is_active ? setEditingItem(item) : null}
                                   className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -2109,6 +2115,10 @@ const ProjectDetails: React.FC = () => {
           billableItems={billableItems}
           onSave={handleItemSave}
           onClose={() => setEditingItem(null)}
+          isAdmin={isAdmin}
+          creditNote={creditNoteFor(editingItem)}
+          onIssueCreditNote={() => { const it = editingItem; setEditingItem(null); if (it) openIssueCN(it); }}
+          onDownloadCreditNote={() => { const cn = creditNoteFor(editingItem); if (cn) downloadCreditNote(cn, editingItem); }}
         />
       )}
 
