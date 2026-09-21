@@ -32,8 +32,8 @@ export const savePurchaseOrder = async (formData: PurchaseOrderFormData): Promis
     const pos = await getPurchaseOrders();
     const newId = pos.length > 0 ? Math.max(...pos.map(po => po.id)) + 1 : 1;
 
-    // Convert document to base64
-    const documentUrl = await saveFile(formData.po_document);
+    // Convert document to base64 (optional — a PO may have no attachment)
+    const documentUrl = formData.po_document ? await saveFile(formData.po_document) : '';
 
     const newPO: PurchaseOrder = {
       id: newId,

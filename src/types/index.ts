@@ -168,6 +168,8 @@ export interface PurchaseOrderFormData {
   po_number: string;
   po_end_date: string;
   po_value: number;
-  po_document: File;
+  // Optional — a PO can be recorded from just its number/value/dates when the
+  // client hasn't shared a document.
+  po_document?: File | null;
   currency?: string | null;
 }

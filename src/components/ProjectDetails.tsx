@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download, Edit, Receipt } from 'lucide-react';
+import { ArrowLeft, Plus, FileText, Pencil, Save, X, Trash2, Download, Edit, Receipt, Upload } from 'lucide-react';
 import type { Project, Client, BillableItem, BillableType, BillableStatus, PurchaseOrder, BillableLineItem } from '../types';
 import LineItemsEditor from './LineItemsEditor';
 import { getProjects, getBillableItemsByProject, saveProject, updateBillableItem, deleteBillableItem, uploadDocument, getPurchaseOrders, savePurchaseOrder, deletePurchaseOrder, updatePurchaseOrder, deleteProject } from '../lib/storage';
@@ -10,6 +10,7 @@ import { pdf } from '@react-pdf/renderer';
 import InvoiceDocument from './InvoiceDocument';
 import { buildInvoiceData, buildCreditNoteData } from '../lib/invoiceData';
 import { getBank, CURRENCIES, isExportCurrency } from '../lib/invoiceConfig';
+import { extractPOFields } from '../lib/poExtract';
 import { logAudit } from '../lib/audit';
 import { getCreditNotes, saveCreditNote, generateCreditNoteNumber, type CreditNote } from '../lib/creditNotes';
 import { useAuth } from '../contexts/AuthContext';
@@ -1076,6 +1077,8 @@ const ProjectDetails: React.FC = () => {
   const [showPOForm, setShowPOForm] = useState(false);
   const [uploadStep, setUploadStep] = useState<'select' | 'details'>('select');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [poExtracting, setPoExtracting] = useState(false);
+  const [poAutofilled, setPoAutofilled] = useState(false);
   const [poUtilization, setPOUtilization] = useState<{ [key: string]: number }>({});
   const [deletingPOId, setDeletingPOId] = useState<number | null>(null);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
@@ -1305,18 +1308,38 @@ const ProjectDetails: React.FC = () => {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Attach a PO document from inside the form (optional) and try to auto-fill
+  // the fields from it. Only empty fields are filled, so manual edits win.
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setUploadedFile(file);
-      setPoFile(file);
-      setUploadStep('details');
+    if (!file) return;
+    setUploadedFile(file);
+    setPoFile(file);
+    setPoExtracting(true);
+    setPoAutofilled(false);
+    try {
+      const found = await extractPOFields(file);
+      const hasAny = Object.values(found).some((v) => v !== undefined && v !== '');
+      if (hasAny) {
+        setNewPO(prev => ({
+          name: prev.name || found.name || '',
+          po_number: prev.po_number || found.po_number || '',
+          po_end_date: prev.po_end_date || found.po_end_date || '',
+          po_value: prev.po_value || found.po_value,
+          currency: prev.currency || 'INR',
+        }));
+        setPoAutofilled(true);
+      }
+    } catch (err) {
+      console.warn('PO auto-fill failed; enter details manually.', err);
+    } finally {
+      setPoExtracting(false);
     }
   };
 
   const handlePOSave = async () => {
-    if (!poFile || !newPO.name || !newPO.po_number || !newPO.po_end_date || !newPO.po_value) {
-      alert('Please fill all fields.');
+    if (!newPO.name || !newPO.po_number || !newPO.po_end_date || !newPO.po_value) {
+      alert('Please fill PO name, number, end date and value.');
       return;
     }
 
@@ -1328,7 +1351,7 @@ const ProjectDetails: React.FC = () => {
         po_end_date: newPO.po_end_date,
         po_value: newPO.po_value,
         currency: newPO.currency || 'INR',
-        po_document: poFile
+        po_document: poFile   // optional — null when no document was attached
       };
 
       const savedPO = await savePurchaseOrder(poData);
@@ -1336,6 +1359,7 @@ const ProjectDetails: React.FC = () => {
       setNewPO({});
       setPoFile(null);
       setUploadedFile(null);
+      setPoAutofilled(false);
       setUploadStep('select');
     } catch (error) {
       console.error('Failed to save purchase order:', error);
@@ -1944,51 +1968,27 @@ const ProjectDetails: React.FC = () => {
                   <p className="text-sm text-gray-500 mt-1">Manage and track your purchase orders</p>
                 </div>
                 {uploadStep === 'select' && (
-                  <div className="relative">
-                    <input
-                      type="file"
-                      id="po-upload"
-                      onChange={handleFileUpload}
-                      accept=".pdf,.doc,.docx"
-                      className="hidden"
-                    />
-                    <label
-                      htmlFor="po-upload"
-                      className="btn btn-primary cursor-pointer"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Upload New PO
-                    </label>
-                  </div>
+                  <button
+                    onClick={() => setUploadStep('details')}
+                    className="btn btn-primary"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add PO
+                  </button>
                 )}
               </div>
 
-              {uploadStep === 'details' && uploadedFile && (
+              {uploadStep === 'details' && (
                 <div className="mb-8">
-                  <div className="flex items-center mb-6">
-                    <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-primary-100 text-primary-600">
-                      1
-                    </div>
-                    <div className="ml-4 flex-1 min-w-0">
-                      <div className="h-2 bg-primary-200 rounded">
-                        <div className="h-2 bg-primary-600 rounded" style={{ width: '100%' }}></div>
-                      </div>
-                    </div>
-                    <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-primary-600 text-white ml-4">
-                      2
-                    </div>
-                  </div>
-
                   <div className="bg-gray-50 p-6 rounded-lg">
                     <div className="flex items-center justify-between mb-6">
                       <div>
                         <h3 className="text-lg font-medium text-gray-900">
-                          Enter PO Details
+                          Add Purchase Order
                         </h3>
-                        <div className="mt-2 flex items-center text-sm text-gray-500">
-                          <FileText className="h-4 w-4 mr-2" />
-                          {uploadedFile.name}
-                        </div>
+                        <p className="mt-1 text-sm text-gray-500">
+                          Attach the PO document to auto-fill the details, or just enter them manually.
+                        </p>
                       </div>
                       <button
                         onClick={() => {
@@ -1996,11 +1996,51 @@ const ProjectDetails: React.FC = () => {
                           setUploadedFile(null);
                           setPoFile(null);
                           setNewPO({});
+                          setPoAutofilled(false);
                         }}
                         className="text-gray-400 hover:text-gray-500"
                       >
                         <X className="h-5 w-5" />
                       </button>
+                    </div>
+
+                    {/* Optional PO document — attach to auto-fill (best-effort). */}
+                    <div className="mb-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        PO Document <span className="text-gray-400 font-normal">(optional)</span>
+                      </label>
+                      {uploadedFile ? (
+                        <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+                          <FileText className="h-4 w-4 text-primary-600 flex-shrink-0" />
+                          <span className="flex-1 truncate text-gray-700">{uploadedFile.name}</span>
+                          {poExtracting && <span className="text-xs text-gray-400">Reading…</span>}
+                          {poAutofilled && !poExtracting && (
+                            <span className="text-xs text-green-600">Auto-filled — please verify</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => { setUploadedFile(null); setPoFile(null); setPoAutofilled(false); }}
+                            className="text-gray-400 hover:text-red-500"
+                            title="Remove document"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <input
+                            type="file"
+                            id="po-upload"
+                            onChange={handleFileUpload}
+                            accept=".pdf,.doc,.docx"
+                            className="hidden"
+                          />
+                          <label htmlFor="po-upload" className="btn btn-secondary cursor-pointer">
+                            <Upload className="h-4 w-4 mr-2" />
+                            Attach document
+                          </label>
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
