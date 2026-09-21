@@ -188,8 +188,6 @@ const BillableItemForm = () => {
         <form onSubmit={handleSubmit}>
           <div className="bg-white shadow-sm ring-1 ring-gray-200 px-4 py-5 sm:rounded-lg sm:p-6">
             <div className="space-y-6">
-              <LineItemsEditor value={lineItems} onChange={setLineItems} currencyCode={formData.currency || 'INR'} />
-
               <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-700">
                   Type <span className="text-red-500">*</span>
@@ -207,59 +205,6 @@ const BillableItemForm = () => {
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="currency" className="block text-sm font-medium text-gray-700">
-                    Currency <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="currency"
-                    value={formData.currency || 'INR'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      currency: e.target.value,
-                      exchange_rate: isExportCurrency(e.target.value) ? prev.exchange_rate : null,
-                    }))}
-                    disabled={poLocksCurrency}
-                    className="form-select mt-1 w-full disabled:bg-gray-50 disabled:text-gray-500"
-                  >
-                    {CURRENCIES.map(c => (
-                      <option key={c.code} value={c.code}>{c.label}</option>
-                    ))}
-                  </select>
-                  {poLocksCurrency ? (
-                    <p className="mt-1 text-xs text-gray-500">Set by the selected PO’s currency.</p>
-                  ) : isForeign && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Export invoice — zero-rated (no GST), numbered EX-…
-                    </p>
-                  )}
-                </div>
-                {isForeign && (
-                  <div>
-                    <label htmlFor="exchange_rate" className="block text-sm font-medium text-gray-700">
-                      Exchange Rate (INR per 1 {formData.currency}) <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      id="exchange_rate"
-                      step="0.0001"
-                      min="0"
-                      value={formData.exchange_rate ?? ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        exchange_rate: e.target.value ? parseFloat(e.target.value) : null,
-                      }))}
-                      className="form-input mt-1 w-full"
-                      placeholder="e.g. 83.25"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Used only for dashboard/GST INR conversion — not shown on the invoice.
-                    </p>
-                  </div>
-                )}
               </div>
 
               {formData.type === 'LICENSE' && (
@@ -346,6 +291,61 @@ const BillableItemForm = () => {
                   ))}
                 </select>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="currency" className="block text-sm font-medium text-gray-700">
+                    Currency <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="currency"
+                    value={formData.currency || 'INR'}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      currency: e.target.value,
+                      exchange_rate: isExportCurrency(e.target.value) ? prev.exchange_rate : null,
+                    }))}
+                    disabled={poLocksCurrency}
+                    className="form-select mt-1 w-full disabled:bg-gray-50 disabled:text-gray-500"
+                  >
+                    {CURRENCIES.map(c => (
+                      <option key={c.code} value={c.code}>{c.label}</option>
+                    ))}
+                  </select>
+                  {poLocksCurrency ? (
+                    <p className="mt-1 text-xs text-gray-500">Set by the selected PO’s currency.</p>
+                  ) : isForeign && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Export invoice — zero-rated (no GST), numbered EX-…
+                    </p>
+                  )}
+                </div>
+                {isForeign && (
+                  <div>
+                    <label htmlFor="exchange_rate" className="block text-sm font-medium text-gray-700">
+                      Exchange Rate (INR per 1 {formData.currency}) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="exchange_rate"
+                      step="0.0001"
+                      min="0"
+                      value={formData.exchange_rate ?? ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        exchange_rate: e.target.value ? parseFloat(e.target.value) : null,
+                      }))}
+                      className="form-input mt-1 w-full"
+                      placeholder="e.g. 83.25"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Used only for dashboard/GST INR conversion — not shown on the invoice.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <LineItemsEditor value={lineItems} onChange={setLineItems} currencyCode={formData.currency || 'INR'} />
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
