@@ -69,7 +69,7 @@ const InvoiceDocument: React.FC<{ data: InvoiceData }> = ({ data }) => {
       <Page size="A4" style={s.page}>
         <Text style={s.title}>{data.docType === 'credit_note' ? 'Credit Note' : 'Tax Invoice'}</Text>
         {data.foreignExport && (
-          <Text style={s.exportBanner}>SUPPLY MEANT FOR EXPORT UNDER LUT WITHOUT PAYMENT OF IGST</Text>
+          <Text style={s.exportBanner}>(SUPPLY MEANT FOR EXPORT/SUPPLY TO SEZ UNIT OR SEZ DEVELOPER FOR AUTHORISED OPERATIONS ON PAYMENT OF IGST)</Text>
         )}
 
         <View style={s.box}>
