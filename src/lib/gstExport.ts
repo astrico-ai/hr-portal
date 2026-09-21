@@ -6,6 +6,7 @@ import { SELLER } from './invoiceConfig';
 // A GST register row for one invoice. Tax is state-aware:
 // intra-state (same state as seller) → CGST+SGST; inter-state → IGST.
 export interface GstRow {
+  type: 'Invoice' | 'Credit Note';
   invoiceNo: string;
   invoiceDate: string;
   client: string;
@@ -80,6 +81,7 @@ export const buildGstRows = (
       const taxable = it.amount;
       const t = taxFor(gstin, taxable);
       return {
+        type: 'Invoice' as const,
         invoiceNo: it.invoice_number!, invoiceDate: it.invoice_date || '',
         client: client?.legal_name || '—', gstin, placeOfSupply: client?.state || '', hsn: SELLER.hsnSac,
         taxable, cgstRate: t.cgstRate, cgstAmt: t.cgst, sgstRate: t.sgstRate, sgstAmt: t.sgst,
@@ -87,16 +89,17 @@ export const buildGstRows = (
       };
     });
 
-  // Credit notes reverse the tax: negative taxable + negative tax, by cn_date.
+  // Credit notes listed separately (positive values), NOT netted against invoices.
   const cnRows: GstRow[] = creditNotes
     .filter((cn) => monthKey === 'ALL' || (cn.cn_date || '').slice(0, 7) === monthKey)
     .sort((a, b) => (a.credit_note_number || '').localeCompare(b.credit_note_number || ''))
     .map((cn) => {
       const client = clientFor(itemById.get(cn.invoice_id));
       const gstin = gstinOf(client);
-      const taxable = -Math.abs(Number(cn.amount) || 0);
+      const taxable = Math.abs(Number(cn.amount) || 0);
       const t = taxFor(gstin, taxable);
       return {
+        type: 'Credit Note' as const,
         invoiceNo: cn.credit_note_number, invoiceDate: cn.cn_date || '',
         client: client?.legal_name || '—', gstin, placeOfSupply: client?.state || '', hsn: SELLER.hsnSac,
         taxable, cgstRate: t.cgstRate, cgstAmt: t.cgst, sgstRate: t.sgstRate, sgstAmt: t.sgst,
@@ -110,22 +113,31 @@ export const buildGstRows = (
 // Build and download an .xlsx GST register.
 export const exportGstExcel = (rows: GstRow[], filename: string) => {
   const header = [
-    'Invoice No', 'Invoice Date', 'Customer', 'Customer GSTIN', 'Place of Supply', 'HSN/SAC',
-    'Taxable Value', 'CGST %', 'CGST Amt', 'SGST %', 'SGST Amt', 'IGST %', 'IGST Amt', 'Invoice Total',
+    'Type', 'Document No', 'Date', 'Customer', 'Customer GSTIN', 'Place of Supply', 'HSN/SAC',
+    'Taxable Value', 'CGST %', 'CGST Amt', 'SGST %', 'SGST Amt', 'IGST %', 'IGST Amt', 'Total',
   ];
   const body = rows.map((r) => [
-    r.invoiceNo, r.invoiceDate, r.client, r.gstin, r.placeOfSupply, r.hsn,
+    r.type, r.invoiceNo, r.invoiceDate, r.client, r.gstin, r.placeOfSupply, r.hsn,
     r.taxable, r.cgstRate || '', r.cgstAmt || '', r.sgstRate || '', r.sgstAmt || '',
     r.igstRate || '', r.igstAmt || '', r.total,
   ]);
-  const sum = (sel: (r: GstRow) => number) => round2(rows.reduce((s, r) => s + sel(r), 0));
-  const totals = [
-    'TOTAL', '', '', '', '', '',
-    sum((r) => r.taxable), '', sum((r) => r.cgstAmt), '', sum((r) => r.sgstAmt), '', sum((r) => r.igstAmt), sum((r) => r.total),
-  ];
 
-  const ws = XLSX.utils.aoa_to_sheet([header, ...body, totals]);
-  ws['!cols'] = header.map((h, i) => ({ wch: i === 2 ? 34 : i === 3 ? 18 : 13 }));
+  // Separate subtotals — invoices and credit notes are NOT netted together.
+  const subtotal = (label: string, rs: GstRow[]) => {
+    const sum = (sel: (r: GstRow) => number) => round2(rs.reduce((s, r) => s + sel(r), 0));
+    return [
+      '', label, '', '', '', '', '',
+      sum((r) => r.taxable), '', sum((r) => r.cgstAmt), '', sum((r) => r.sgstAmt), '', sum((r) => r.igstAmt), sum((r) => r.total),
+    ];
+  };
+  const invRows = rows.filter((r) => r.type === 'Invoice');
+  const cnRows = rows.filter((r) => r.type === 'Credit Note');
+
+  const sheet: any[][] = [header, ...body, subtotal('Total Invoices', invRows)];
+  if (cnRows.length) sheet.push(subtotal('Total Credit Notes', cnRows));
+
+  const ws = XLSX.utils.aoa_to_sheet(sheet);
+  ws['!cols'] = header.map((h, i) => ({ wch: i === 3 ? 34 : i === 4 ? 18 : i === 0 ? 12 : 13 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'GST Register');
   XLSX.writeFile(wb, filename);

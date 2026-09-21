@@ -31,9 +31,10 @@ const GstExport: React.FC<GstExportProps> = ({ projects, clients, billableItems 
     () => buildGstRows(billableItems, projects as Project[], clients, month, creditNotes),
     [billableItems, projects, clients, month, creditNotes]
   );
-  const taxable = rows.reduce((s, r) => s + r.taxable, 0);
-  const tax = rows.reduce((s, r) => s + r.cgstAmt + r.sgstAmt + r.igstAmt, 0);
-  const cnCount = rows.filter((r) => (r.invoiceNo || '').startsWith('CN-')).length;
+  const invRows = rows.filter((r) => r.type === 'Invoice');
+  const cnRows = rows.filter((r) => r.type === 'Credit Note');
+  const sumTaxable = (rs: typeof rows) => rs.reduce((s, r) => s + r.taxable, 0);
+  const sumTax = (rs: typeof rows) => rs.reduce((s, r) => s + r.cgstAmt + r.sgstAmt + r.igstAmt, 0);
 
   const handleExport = () => {
     if (rows.length === 0) return;
@@ -72,23 +73,27 @@ const GstExport: React.FC<GstExportProps> = ({ projects, clients, billableItems 
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-6 border-t border-gray-100 pt-4 text-sm">
+      <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-gray-100 pt-4 text-sm">
         <div>
-          <p className="text-gray-400">Documents</p>
-          <p className="font-semibold text-gray-900">{rows.length - cnCount} inv{cnCount > 0 ? ` · ${cnCount} CN` : ''}</p>
+          <p className="text-gray-400">Invoices</p>
+          <p className="font-semibold text-gray-900">{invRows.length}</p>
         </div>
         <div>
-          <p className="text-gray-400">Taxable value</p>
-          <p className="font-semibold text-gray-900">{formatCurrency(taxable)}</p>
+          <p className="text-gray-400">Invoice taxable / tax</p>
+          <p className="font-semibold text-gray-900">{formatCurrency(sumTaxable(invRows))} · {formatCurrency(sumTax(invRows))}</p>
         </div>
-        <div>
-          <p className="text-gray-400">Tax (CGST+SGST / IGST)</p>
-          <p className="font-semibold text-gray-900">{formatCurrency(tax)}</p>
-        </div>
-        <div>
-          <p className="text-gray-400">Total</p>
-          <p className="font-semibold text-gray-900">{formatCurrency(taxable + tax)}</p>
-        </div>
+        {cnRows.length > 0 && (
+          <>
+            <div>
+              <p className="text-gray-400">Credit notes</p>
+              <p className="font-semibold text-amber-700">{cnRows.length}</p>
+            </div>
+            <div>
+              <p className="text-gray-400">CN taxable / tax</p>
+              <p className="font-semibold text-amber-700">{formatCurrency(sumTaxable(cnRows))} · {formatCurrency(sumTax(cnRows))}</p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
