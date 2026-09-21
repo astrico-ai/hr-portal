@@ -1,5 +1,5 @@
 import type { BillableItem, Project, Client, BillableLineItem } from '../types';
-import { SELLER, BankAccount } from './invoiceConfig';
+import { SELLER, BankAccount, currencySymbol, isExportCurrency } from './invoiceConfig';
 
 // ---- number → Indian words ----
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -29,14 +29,17 @@ export const numberToWords = (value: number): string => {
   return parts.join(' ').trim();
 };
 
-const inrInWords = (amount: number) => `INR ${numberToWords(amount)} Only`;
-const taxInWords = (amount: number) => {
+// Amount in words, prefixed with the currency code (INR for domestic, else the
+// export currency e.g. USD/GBP). Sub-units are still spelled "paise" — good
+// enough for a memo line and avoids per-currency minor-unit names.
+const amountInWordsFor = (amount: number, ccy = 'INR') => `${ccy} ${numberToWords(amount)} Only`;
+const taxInWords = (amount: number, ccy = 'INR') => {
   const rupees = Math.floor(amount);
   const paise = Math.round((amount - rupees) * 100);
   if (amount === 0) return 'NIL';
   return paise > 0
-    ? `INR ${numberToWords(rupees)} and ${twoDigits(paise)} paise Only`
-    : `INR ${numberToWords(rupees)} Only`;
+    ? `${ccy} ${numberToWords(rupees)} and ${twoDigits(paise)} paise Only`
+    : `${ccy} ${numberToWords(rupees)} Only`;
 };
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -82,6 +85,28 @@ export const generateInvoiceNumber = (iso: string, allItems: BillableItem[]): st
   return `${year}-${token}-${String(max + 1).padStart(3, '0')}`;
 };
 
+// Next EXPORT invoice number for a date — the foreign-currency series, prefixed
+// "EX-" and numbered independently of the domestic series. e.g. EX-2026-JUNE-002.
+export const generateExportInvoiceNumber = (iso: string, allItems: BillableItem[]): string => {
+  const [y, m] = (iso || '').split('-').map(Number);
+  const year = y || new Date().getFullYear();
+  const monthIdx = (m || 1) - 1;
+  const token = MONTH_TOKEN[monthIdx];
+
+  let max = 0;
+  for (const it of allItems) {
+    const n = it.invoice_number;
+    if (!n) continue;
+    const match = String(n).trim().match(/^EX-(\d{4})-([A-Za-z]+)-(\d+)$/i);
+    if (!match) continue; // only the EX- series counts here
+    if (parseInt(match[1], 10) !== year) continue;
+    if (monthIndexFromToken(match[2]) !== monthIdx) continue;
+    const counter = parseInt(match[3], 10);
+    if (!isNaN(counter) && counter > max) max = counter;
+  }
+  return `EX-${year}-${token}-${String(max + 1).padStart(3, '0')}`;
+};
+
 // ---- structured invoice ----
 export interface InvoiceData {
   invoiceNo: string;
@@ -95,6 +120,9 @@ export interface InvoiceData {
   buyer: { name: string; address: string; gstin: string; stateName: string; stateCode: string };
   isExport: boolean;
   intrastate: boolean;
+  currency: string;        // 'INR' or an export currency code
+  currencySymbol: string;  // printed money prefix (e.g. 'Rs.', 'USD', '$')
+  foreignExport: boolean;  // true → non-INR invoice: show export declaration, no tax
   lines: Array<{
     description: string;
     subDescription: string;
@@ -126,9 +154,13 @@ export const buildInvoiceData = (
 ): InvoiceData => {
   const gstin = client.gst_number && client.gst_number !== 'N.A' ? client.gst_number : '';
   const stateCode = gstin ? gstin.slice(0, 2) : '';
-  const isExport = !gstin; // no Indian GSTIN → treated as zero-rated export
+  // Foreign-currency invoice → always zero-rated export (EX- series), regardless
+  // of the buyer's GSTIN. INR invoices fall back to the GSTIN-based rule.
+  const currency = (item.currency || 'INR').toUpperCase();
+  const foreignExport = isExportCurrency(currency);
+  const isExport = foreignExport || !gstin; // no Indian GSTIN or foreign currency → zero-rated
   // Smart GST: same state as seller (Maharashtra/27) → CGST+SGST; else IGST.
-  const intrastate = stateCode === SELLER.stateCode;
+  const intrastate = !foreignExport && stateCode === SELLER.stateCode;
 
   // One row per line item (fall back to the single name/amount for old records).
   const lineSource: BillableLineItem[] = item.line_items?.length
@@ -157,8 +189,10 @@ export const buildInvoiceData = (
   }
   const taxAmount = round2(cgst + sgst + igst);
   const raw = taxable + taxAmount;
-  const total = Math.round(raw);
-  const roundOff = round2(total - raw);
+  // Domestic invoices round to the whole rupee (standard on Indian tax invoices);
+  // foreign-currency invoices keep their decimals (no round-off line).
+  const total = foreignExport ? round2(raw) : Math.round(raw);
+  const roundOff = foreignExport ? 0 : round2(total - raw);
 
   // Signature date = the date the invoice was signed/generated, captured ONCE
   // (invoice_generation_date) and frozen against later edits; falls back to the
@@ -184,6 +218,9 @@ export const buildInvoiceData = (
     },
     isExport,
     intrastate,
+    currency,
+    currencySymbol: currencySymbol(currency),
+    foreignExport,
     lines,
     taxable,
     cgst,
@@ -193,8 +230,8 @@ export const buildInvoiceData = (
     taxAmount,
     roundOff,
     total,
-    amountInWords: inrInWords(total),
-    taxAmountInWords: taxInWords(taxAmount),
+    amountInWords: amountInWordsFor(total, currency),
+    taxAmountInWords: taxInWords(taxAmount, currency),
     bank,
   };
 };

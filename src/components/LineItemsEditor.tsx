@@ -5,17 +5,26 @@ import type { BillableLineItem } from '../types';
 interface LineItemsEditorProps {
   value: BillableLineItem[];
   onChange: (items: BillableLineItem[]) => void;
+  // Currency the amounts are entered in (defaults to INR). Only changes the
+  // displayed symbol — values are stored as plain numbers.
+  currencyCode?: string;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
-const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(n);
+// Web display symbol: ₹ renders fine in the browser (the Helvetica-glyph issue
+// is PDF-only); foreign currencies show their 3-letter code.
+const symbolFor = (code?: string) => (!code || code === 'INR' ? '₹' : code);
+const formatMoney = (n: number, code?: string) =>
+  code && code !== 'INR'
+    ? `${code} ${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+    : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(n);
 
 // amount = qty × rate when both are present; otherwise the entered lump sum.
 const lineAmount = (it: BillableLineItem): number =>
   it.quantity && it.rate ? round2(Number(it.quantity) * Number(it.rate)) : Number(it.amount) || 0;
 
-const LineItemsEditor: React.FC<LineItemsEditorProps> = ({ value, onChange }) => {
+const LineItemsEditor: React.FC<LineItemsEditorProps> = ({ value, onChange, currencyCode }) => {
+  const sym = symbolFor(currencyCode);
   const items = value.length ? value : [{ description: '', amount: 0 }];
   const total = items.reduce((s, it) => s + lineAmount(it), 0);
 
@@ -41,7 +50,7 @@ const LineItemsEditor: React.FC<LineItemsEditorProps> = ({ value, onChange }) =>
       <div className="hidden sm:flex items-center gap-2 px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
         <span className="flex-1">Description</span>
         <span className="w-16 text-right">Qty</span>
-        <span className="w-28 text-right">Rate (₹)</span>
+        <span className="w-28 text-right">Rate ({sym})</span>
         <span className="w-20">Per</span>
         <span className="w-32 text-right">Amount</span>
         <span className="w-4" />
@@ -87,7 +96,7 @@ const LineItemsEditor: React.FC<LineItemsEditorProps> = ({ value, onChange }) =>
               />
               <div className="relative w-32">
                 <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">₹</span>
+                  <span className="text-gray-500 sm:text-sm">{sym}</span>
                 </div>
                 <input
                   type="number"
@@ -125,7 +134,7 @@ const LineItemsEditor: React.FC<LineItemsEditorProps> = ({ value, onChange }) =>
           <Plus className="h-4 w-4" /> Add line item
         </button>
         <span className="text-sm text-gray-500">
-          Total: <span className="font-semibold text-gray-900">{formatCurrency(total)}</span>
+          Total: <span className="font-semibold text-gray-900">{formatMoney(total, currencyCode)}</span>
         </span>
       </div>
       <p className="mt-1 text-xs text-gray-400">

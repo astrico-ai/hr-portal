@@ -86,18 +86,22 @@ const NextDueInvoices: React.FC<NextDueInvoicesProps> = ({ projects, clients, bi
         projectName: project.name,
         clientName: client?.legal_name ?? '—',
         frequency: latest.billing_frequency,
-        value: latest.amount,
+        value: latest.amount, // INR (dashboard-normalized) — shown as "expected"
         nextStart,
         nextEnd,
         daysFromToday,
         isDue: daysFromToday <= 0,
-        // Pre-fill payload for the billable-item form.
+        // Pre-fill payload for the billable-item form. Use the original foreign
+        // amount (amount_orig) when present so a foreign license keeps its
+        // currency + value; carry currency/exchange_rate through.
         prefill: {
           name: latest.name,
           type: 'LICENSE' as const,
           billing_frequency: latest.billing_frequency,
           custom_interval_days: latest.custom_interval_days ?? null,
-          amount: latest.amount,
+          amount: latest.amount_orig ?? latest.amount,
+          currency: latest.currency ?? 'INR',
+          exchange_rate: latest.exchange_rate ?? null,
           po_number: latest.po_number,
           start_date: toYMD(nextStart),
           end_date: toYMD(nextEnd),

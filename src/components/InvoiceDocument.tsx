@@ -3,10 +3,11 @@ import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/render
 import type { InvoiceData } from '../lib/invoiceData';
 import { SIGNATURE_STAMP } from '../lib/invoiceAssets';
 
-// Indian-grouped money. Uses "Rs." (not ₹) so the built-in Helvetica font
-// renders reliably — swap to ₹ only with a registered Unicode font.
-const money = (n: number) =>
-  'Rs. ' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Money with a currency prefix. Uses "Rs."/3-letter codes (not ₹/€/£) so the
+// built-in Helvetica font renders reliably — swap to symbols only with a
+// registered Unicode font.
+const money = (n: number, sym = 'Rs.') =>
+  `${sym} ` + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const plain = (n: number) =>
   n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -14,6 +15,7 @@ const B = '#000';
 const s = StyleSheet.create({
   page: { padding: 24, fontSize: 8, fontFamily: 'Helvetica', color: B, flexDirection: 'column' },
   title: { textAlign: 'center', fontSize: 12, fontFamily: 'Helvetica-Bold', marginBottom: 6 },
+  exportBanner: { textAlign: 'center', fontSize: 8, fontFamily: 'Helvetica-Bold', marginBottom: 6, marginTop: -2 },
   box: { borderWidth: 1, borderColor: B },
   row: { flexDirection: 'row' },
   // top header
@@ -66,6 +68,9 @@ const InvoiceDocument: React.FC<{ data: InvoiceData }> = ({ data }) => {
     <Document>
       <Page size="A4" style={s.page}>
         <Text style={s.title}>{data.docType === 'credit_note' ? 'Credit Note' : 'Tax Invoice'}</Text>
+        {data.foreignExport && (
+          <Text style={s.exportBanner}>SUPPLY MEANT FOR EXPORT UNDER LUT WITHOUT PAYMENT OF IGST</Text>
+        )}
 
         <View style={s.box}>
           {/* Header: seller + invoice meta */}
@@ -210,7 +215,7 @@ const InvoiceDocument: React.FC<{ data: InvoiceData }> = ({ data }) => {
             <Text style={[s.tc, s.cQty]}> </Text>
             <Text style={[s.tc, s.cRate]}> </Text>
             <Text style={[s.tc, s.cPer]}> </Text>
-            <Text style={[s.tc, s.cAmt, s.bold, { borderRightWidth: 0 }]}>{money(data.total)}</Text>
+            <Text style={[s.tc, s.cAmt, s.bold, { borderRightWidth: 0 }]}>{money(data.total, data.currencySymbol)}</Text>
           </View>
 
           {/* Amount in words */}

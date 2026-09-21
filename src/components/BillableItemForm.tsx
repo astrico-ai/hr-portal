@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import type { BillableItemFormData, BillableType, PurchaseOrder, BillableItem, Project, BillableLineItem } from '../types';
 import { saveBillableItem, getPurchaseOrders, getBillableItems, getProjects } from '../lib/storage';
+import { CURRENCIES, isExportCurrency } from '../lib/invoiceConfig';
 import LineItemsEditor from './LineItemsEditor';
 
 const BILLABLE_TYPES: BillableType[] = ['LICENSE', 'ONE_TIME', 'OTHERS'];
@@ -42,8 +43,11 @@ const BillableItemForm = () => {
     project_manager: '',
     cx_manager: '',
     invoice_raised_by: null,
+    currency: 'INR',
+    exchange_rate: null,
     ...(prefill || {}),
   });
+  const isForeign = isExportCurrency(formData.currency);
   // Line items (description + cost). Seeded from a prefill or a single blank row.
   const [lineItems, setLineItems] = useState<BillableLineItem[]>(
     prefill?.line_items?.length
@@ -125,6 +129,11 @@ const BillableItemForm = () => {
         setLoading(false);
         return;
       }
+      if (isForeign && !(Number(formData.exchange_rate) > 0)) {
+        alert('Please enter the exchange rate (INR per 1 unit) for this foreign-currency invoice.');
+        setLoading(false);
+        return;
+      }
       const total = cleanLines.reduce((s, li) => s + li.amount, 0);
       const name = cleanLines.length === 1
         ? cleanLines[0].description
@@ -137,7 +146,10 @@ const BillableItemForm = () => {
         line_items: cleanLines,
         proposal_document: proposalDocumentInput?.files?.[0] || null,
         // Don't include a PO document since we're using an existing PO
-        po_document: null
+        po_document: null,
+        currency: formData.currency || 'INR',
+        // Exchange rate only applies to foreign currency; clear it for INR.
+        exchange_rate: isForeign ? Number(formData.exchange_rate) : null,
       };
 
       await saveBillableItem(submitData);
@@ -174,7 +186,7 @@ const BillableItemForm = () => {
         <form onSubmit={handleSubmit}>
           <div className="bg-white shadow-sm ring-1 ring-gray-200 px-4 py-5 sm:rounded-lg sm:p-6">
             <div className="space-y-6">
-              <LineItemsEditor value={lineItems} onChange={setLineItems} />
+              <LineItemsEditor value={lineItems} onChange={setLineItems} currencyCode={formData.currency || 'INR'} />
 
               <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-700">
@@ -193,6 +205,56 @@ const BillableItemForm = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="currency" className="block text-sm font-medium text-gray-700">
+                    Currency <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="currency"
+                    value={formData.currency || 'INR'}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      currency: e.target.value,
+                      exchange_rate: isExportCurrency(e.target.value) ? prev.exchange_rate : null,
+                    }))}
+                    className="form-select mt-1 w-full"
+                  >
+                    {CURRENCIES.map(c => (
+                      <option key={c.code} value={c.code}>{c.label}</option>
+                    ))}
+                  </select>
+                  {isForeign && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Export invoice — zero-rated (no GST), numbered EX-…
+                    </p>
+                  )}
+                </div>
+                {isForeign && (
+                  <div>
+                    <label htmlFor="exchange_rate" className="block text-sm font-medium text-gray-700">
+                      Exchange Rate (INR per 1 {formData.currency}) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="exchange_rate"
+                      step="0.0001"
+                      min="0"
+                      value={formData.exchange_rate ?? ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        exchange_rate: e.target.value ? parseFloat(e.target.value) : null,
+                      }))}
+                      className="form-input mt-1 w-full"
+                      placeholder="e.g. 83.25"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Used only for dashboard/GST INR conversion — not shown on the invoice.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {formData.type === 'LICENSE' && (

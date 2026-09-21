@@ -9,10 +9,16 @@ import { handleDocumentClick } from '../utils/documentUtils';
 import { pdf } from '@react-pdf/renderer';
 import InvoiceDocument from './InvoiceDocument';
 import { buildInvoiceData, buildCreditNoteData } from '../lib/invoiceData';
-import { getBank } from '../lib/invoiceConfig';
+import { getBank, CURRENCIES, isExportCurrency } from '../lib/invoiceConfig';
 import { logAudit } from '../lib/audit';
 import { getCreditNotes, saveCreditNote, generateCreditNoteNumber, type CreditNote } from '../lib/creditNotes';
 import { useAuth } from '../contexts/AuthContext';
+
+// Per-item amount in its own currency (foreign shows the code, INR shows ₹).
+const fmtItemAmount = (item: { amount?: number | null; currency?: string | null }) =>
+  isExportCurrency(item.currency)
+    ? `${item.currency} ${(item.amount ?? 0).toLocaleString()}`
+    : `₹${(item.amount ?? 0).toLocaleString()}`;
 
 interface ProjectInfoProps {
   project: Project;
@@ -336,6 +342,12 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
     e.preventDefault();
     setLoading(true);
     try {
+      // Foreign-currency invoices need an exchange rate for INR conversion.
+      if (isExportCurrency(formData.currency) && !(Number(formData.exchange_rate) > 0)) {
+        alert('Please enter the exchange rate (INR per 1 unit) for this foreign-currency invoice.');
+        setLoading(false);
+        return;
+      }
       // Validate required fields for RAISED or RECEIVED status
       if (formData.status === 'RAISED' || formData.status === 'RECEIVED') {
         if (!formData.invoice_number || !formData.invoice_date || !formData.invoice_raised_by) {
@@ -401,7 +413,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
 
         <form onSubmit={handleSubmit} className="px-6 py-4 max-h-[calc(100vh-200px)] overflow-y-auto">
           <div className="space-y-6">
-            <LineItemsEditor value={lineItems} onChange={setLineItems} />
+            <LineItemsEditor value={lineItems} onChange={setLineItems} currencyCode={formData.currency || 'INR'} />
 
             <div>
               <label htmlFor="type" className="block text-sm font-medium text-gray-700">
@@ -420,6 +432,52 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="currency" className="block text-sm font-medium text-gray-700">
+                  Currency <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="currency"
+                  value={formData.currency || 'INR'}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    currency: e.target.value,
+                    exchange_rate: isExportCurrency(e.target.value) ? prev.exchange_rate : null,
+                  }))}
+                  className="form-select mt-1 w-full"
+                >
+                  {CURRENCIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+                {isExportCurrency(formData.currency) && (
+                  <p className="mt-1 text-xs text-gray-500">Export invoice — zero-rated (no GST), numbered EX-…</p>
+                )}
+              </div>
+              {isExportCurrency(formData.currency) && (
+                <div>
+                  <label htmlFor="exchange_rate" className="block text-sm font-medium text-gray-700">
+                    Exchange Rate (INR per 1 {formData.currency}) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="exchange_rate"
+                    step="0.0001"
+                    min="0"
+                    value={formData.exchange_rate ?? ''}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      exchange_rate: e.target.value ? parseFloat(e.target.value) : null,
+                    }))}
+                    className="form-input mt-1 w-full"
+                    placeholder="e.g. 83.25"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Dashboard/GST INR conversion only — not shown on the invoice.</p>
+                </div>
+              )}
             </div>
 
             {formData.type === 'LICENSE' && (
@@ -777,7 +835,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                 <h4 className="text-sm font-semibold text-gray-900">Credit Note</h4>
                 {creditNote ? (
                   <p className="text-xs text-gray-500">
-                    {creditNote.credit_note_number} · ₹{Number(creditNote.amount).toLocaleString()}
+                    {creditNote.credit_note_number} · {fmtItemAmount({ amount: Number(creditNote.amount), currency: item.currency })}
                     {creditNote.reason ? ` · ${creditNote.reason}` : ''}
                   </p>
                 ) : (
@@ -1195,7 +1253,7 @@ const ProjectDetails: React.FC = () => {
         amount,
         reason: cnForm.reason,
       });
-      logAudit('Credit note issued', `${number} · against ${issuingCN.invoice_number} · ₹${amount.toLocaleString()}`, issuingCN.id);
+      logAudit('Credit note issued', `${number} · against ${issuingCN.invoice_number} · ${fmtItemAmount({ amount, currency: issuingCN.currency })}`, issuingCN.id);
       setIssuingCN(null);
       setCreditNotes(await getCreditNotes());
     } catch (err: any) {
@@ -1658,7 +1716,7 @@ const ProjectDetails: React.FC = () => {
                               {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-900 text-right">
-                              ₹{(item.amount ?? 0).toLocaleString()}
+                              {fmtItemAmount(item)}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-500">
                               {item.invoice_document_url ? (
@@ -1761,7 +1819,7 @@ const ProjectDetails: React.FC = () => {
                               {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-900 text-right">
-                              ₹{(item.amount ?? 0).toLocaleString()}
+                              {fmtItemAmount(item)}
                             </td>
                             <td className="px-3 py-4 text-sm text-gray-500">
                               {item.invoice_document_url ? (
@@ -2132,7 +2190,7 @@ const ProjectDetails: React.FC = () => {
             <p className="mb-4 text-xs text-gray-500">Against invoice <span className="font-medium text-gray-700">{issuingCN.invoice_number}</span> — number auto-generated on save.</p>
             <div className="space-y-4">
               <div>
-                <label className="form-label">Credit amount (₹)</label>
+                <label className="form-label">Credit amount ({isExportCurrency(issuingCN.currency) ? issuingCN.currency : '₹'})</label>
                 <input type="number" className="form-input" value={cnForm.amount}
                   onChange={(e) => setCnForm({ ...cnForm, amount: e.target.value })} />
                 <p className="mt-1 text-xs text-gray-400">Defaults to the full invoice value; edit for a partial credit.</p>

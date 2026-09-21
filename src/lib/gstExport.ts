@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import type { BillableItem, Client, Project } from '../types';
 import type { CreditNote } from './creditNotes';
-import { SELLER } from './invoiceConfig';
+import { SELLER, isExportCurrency, inrValue } from './invoiceConfig';
 
 // A GST register row for one invoice. Tax is state-aware:
 // intra-state (same state as seller) → CGST+SGST; inter-state → IGST.
@@ -13,7 +13,10 @@ export interface GstRow {
   gstin: string;
   placeOfSupply: string;
   hsn: string;
-  taxable: number;
+  currency: string;       // 'INR' or export currency code
+  fxRate: number;         // INR per unit (1 for INR)
+  foreignValue: number;   // value in the original currency
+  taxable: number;        // INR taxable value (foreign × fxRate)
   cgstRate: number;
   cgstAmt: number;
   sgstRate: number;
@@ -77,13 +80,20 @@ export const buildGstRows = (
     .sort((a, b) => (a.invoice_number || '').localeCompare(b.invoice_number || ''))
     .map((it) => {
       const client = clientFor(it);
+      // Foreign-currency (export) invoices are zero-rated regardless of GSTIN;
+      // their taxable value is reported in INR (foreign × exchange rate).
+      const foreign = isExportCurrency(it.currency);
+      const currency = (it.currency || 'INR').toUpperCase();
+      const fxRate = foreign ? Number(it.exchange_rate) || 0 : 1;
+      const foreignValue = it.amount;
+      const taxable = inrValue(it.amount, it.currency, it.exchange_rate);
       const gstin = gstinOf(client);
-      const taxable = it.amount;
-      const t = taxFor(gstin, taxable);
+      const t = taxFor(foreign ? '' : gstin, taxable);
       return {
         type: 'Invoice' as const,
         invoiceNo: it.invoice_number!, invoiceDate: it.invoice_date || '',
         client: client?.legal_name || '—', gstin, placeOfSupply: client?.state || '', hsn: SELLER.hsnSac,
+        currency, fxRate, foreignValue,
         taxable, cgstRate: t.cgstRate, cgstAmt: t.cgst, sgstRate: t.sgstRate, sgstAmt: t.sgst,
         igstRate: t.igstRate, igstAmt: t.igst, total: Math.round(taxable + t.cgst + t.sgst + t.igst),
       };
@@ -94,14 +104,21 @@ export const buildGstRows = (
     .filter((cn) => monthKey === 'ALL' || (cn.cn_date || '').slice(0, 7) === monthKey)
     .sort((a, b) => (a.credit_note_number || '').localeCompare(b.credit_note_number || ''))
     .map((cn) => {
-      const client = clientFor(itemById.get(cn.invoice_id));
+      const invoice = itemById.get(cn.invoice_id);
+      const client = clientFor(invoice);
+      // Credit note inherits its invoice's currency; amount is in that currency.
+      const foreign = isExportCurrency(invoice?.currency);
+      const currency = (invoice?.currency || 'INR').toUpperCase();
+      const fxRate = foreign ? Number(invoice?.exchange_rate) || 0 : 1;
+      const foreignValue = Math.abs(Number(cn.amount) || 0);
+      const taxable = inrValue(foreignValue, invoice?.currency, invoice?.exchange_rate);
       const gstin = gstinOf(client);
-      const taxable = Math.abs(Number(cn.amount) || 0);
-      const t = taxFor(gstin, taxable);
+      const t = taxFor(foreign ? '' : gstin, taxable);
       return {
         type: 'Credit Note' as const,
         invoiceNo: cn.credit_note_number, invoiceDate: cn.cn_date || '',
         client: client?.legal_name || '—', gstin, placeOfSupply: client?.state || '', hsn: SELLER.hsnSac,
+        currency, fxRate, foreignValue,
         taxable, cgstRate: t.cgstRate, cgstAmt: t.cgst, sgstRate: t.sgstRate, sgstAmt: t.sgst,
         igstRate: t.igstRate, igstAmt: t.igst, total: Math.round(taxable + t.cgst + t.sgst + t.igst),
       };
@@ -114,19 +131,22 @@ export const buildGstRows = (
 export const exportGstExcel = (rows: GstRow[], filename: string) => {
   const header = [
     'Type', 'Document No', 'Date', 'Customer', 'Customer GSTIN', 'Place of Supply', 'HSN/SAC',
-    'Taxable Value', 'CGST %', 'CGST Amt', 'SGST %', 'SGST Amt', 'IGST %', 'IGST Amt', 'Total',
+    'Currency', 'FX Rate', 'Foreign Value', 'Taxable Value (INR)',
+    'CGST %', 'CGST Amt', 'SGST %', 'SGST Amt', 'IGST %', 'IGST Amt', 'Total',
   ];
   const body = rows.map((r) => [
     r.type, r.invoiceNo, r.invoiceDate, r.client, r.gstin, r.placeOfSupply, r.hsn,
-    r.taxable, r.cgstRate || '', r.cgstAmt || '', r.sgstRate || '', r.sgstAmt || '',
+    r.currency, r.currency === 'INR' ? '' : r.fxRate, r.currency === 'INR' ? '' : r.foreignValue, r.taxable,
+    r.cgstRate || '', r.cgstAmt || '', r.sgstRate || '', r.sgstAmt || '',
     r.igstRate || '', r.igstAmt || '', r.total,
   ]);
 
   // Separate subtotals — invoices and credit notes are NOT netted together.
+  // Foreign values aren't summed (mixed currencies); only INR taxable/tax/total.
   const subtotal = (label: string, rs: GstRow[]) => {
     const sum = (sel: (r: GstRow) => number) => round2(rs.reduce((s, r) => s + sel(r), 0));
     return [
-      '', label, '', '', '', '', '',
+      '', label, '', '', '', '', '', '', '', '',
       sum((r) => r.taxable), '', sum((r) => r.cgstAmt), '', sum((r) => r.sgstAmt), '', sum((r) => r.igstAmt), sum((r) => r.total),
     ];
   };

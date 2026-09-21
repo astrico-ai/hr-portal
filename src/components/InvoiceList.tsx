@@ -6,11 +6,17 @@ import { getProjects, getBillableItems, updateBillableItem, deleteProject } from
 import ProjectModal from './ProjectModal';
 import { useNavigate } from 'react-router-dom';
 import { handleDocumentClick } from '../utils/documentUtils';
-import { generateInvoiceNumber } from '../lib/invoiceData';
-import { BANK_ACCOUNTS, getBank } from '../lib/invoiceConfig';
+import { generateInvoiceNumber, generateExportInvoiceNumber } from '../lib/invoiceData';
+import { BANK_ACCOUNTS, getBank, isExportCurrency, inrValue } from '../lib/invoiceConfig';
 import { logAudit } from '../lib/audit';
 import GstExport from './GstExport';
 import { useAuth } from '../contexts/AuthContext';
+
+// Per-item amount in its own currency (foreign shows the code, INR shows ₹).
+const fmtItemAmount = (item: { amount: number; currency?: string | null }) =>
+  isExportCurrency(item.currency)
+    ? `${item.currency} ${item.amount.toLocaleString()}`
+    : `₹${item.amount.toLocaleString()}`;
 
 interface ProjectWithClient {
   project: Project;
@@ -84,7 +90,8 @@ const InvoiceList = () => {
       const projectsWithClients: ProjectWithClient[] = projectsData.map(project => {
         const client = clientsData.find(c => c.id === project.client_id)!;
         const projectItems = itemsData.filter(item => item.project_id === project.id);
-        const totalAmount = projectItems.reduce((sum, item) => sum + item.amount, 0);
+        // Convert foreign-currency invoices to INR so the group total is meaningful.
+        const totalAmount = projectItems.reduce((sum, item) => sum + inrValue(item.amount, item.currency, item.exchange_rate), 0);
 
         return {
           project,
@@ -141,9 +148,14 @@ const InvoiceList = () => {
       }
 
       // Invoice date = approval date (today). Number = next in that month's series.
+      // Foreign-currency invoices get the separate EX- (export) series.
       const now = new Date();
       const approvalDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const invoiceNo = item.invoice_number || generateInvoiceNumber(approvalDate, allItems);
+      const invoiceNo = item.invoice_number || (
+        isExportCurrency(item.currency)
+          ? generateExportInvoiceNumber(approvalDate, allItems)
+          : generateInvoiceNumber(approvalDate, allItems)
+      );
 
       const updatedItem: BillableItem = {
         ...item,
@@ -195,9 +207,9 @@ const InvoiceList = () => {
     }
   };
 
-  // Calculate total amounts
-  const totalPendingAmount = pendingInvoices.reduce((sum, { item }) => sum + item.amount, 0);
-  const totalApprovalAmount = approvalItems.reduce((sum, item) => sum + item.amount, 0);
+  // Calculate total amounts (foreign-currency invoices converted to INR).
+  const totalPendingAmount = pendingInvoices.reduce((sum, { item }) => sum + inrValue(item.amount, item.currency, item.exchange_rate), 0);
+  const totalApprovalAmount = approvalItems.reduce((sum, item) => sum + inrValue(item.amount, item.currency, item.exchange_rate), 0);
 
   if (loading) {
     return (
@@ -496,7 +508,7 @@ const InvoiceList = () => {
                         {item.name}
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-900 text-right">
-                        ₹{item.amount.toLocaleString()}
+                        {fmtItemAmount(item)}
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-900">
                         {new Date(item.invoice_date!).toLocaleDateString()}
@@ -604,7 +616,7 @@ const InvoiceList = () => {
                         {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
                       </td>
                       <td className="px-3 py-4 text-sm text-gray-900 text-right">
-                        ₹{item.amount.toLocaleString()}
+                        {fmtItemAmount(item)}
                       </td>
                       <td className="px-3 py-4">
                         <div className="flex items-center gap-2">

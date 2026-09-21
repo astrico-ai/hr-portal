@@ -199,6 +199,9 @@ export const saveBillableItem = async (formData: BillableItemFormData): Promise<
       project_manager: formData.project_manager,
       cx_manager: formData.cx_manager,
       invoice_raised_by: formData.invoice_raised_by || null,
+      // Foreign-currency (export) invoice fields. Default INR; rate only for foreign.
+      currency: formData.currency || 'INR',
+      exchange_rate: formData.exchange_rate ?? null,
       // Initialize invoice generation fields
       invoice_generated: false,
       invoice_number_generated: null,

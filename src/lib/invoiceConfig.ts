@@ -54,3 +54,43 @@ export const BANK_ACCOUNTS: BankAccount[] = [
 
 export const getBank = (id?: string | null): BankAccount | undefined =>
   BANK_ACCOUNTS.find((b) => b.id === id);
+
+// ---- Foreign-currency (export) invoices -------------------------------------
+// Top currencies we raise export invoices in. `symbol` is what we print on the
+// PDF — we use the 3-letter code (or a plain ASCII sign) to stay within
+// Helvetica's glyph set (@react-pdf/renderer can't render ₹/€/£ reliably).
+export interface CurrencyOption {
+  code: string;
+  label: string;
+  symbol: string; // printed prefix on the invoice
+}
+
+export const CURRENCIES: CurrencyOption[] = [
+  { code: 'INR', label: 'Indian Rupee (INR)', symbol: 'Rs.' },
+  { code: 'USD', label: 'US Dollar (USD)', symbol: 'USD' },
+  { code: 'EUR', label: 'Euro (EUR)', symbol: 'EUR' },
+  { code: 'GBP', label: 'British Pound (GBP)', symbol: 'GBP' },
+  { code: 'AED', label: 'UAE Dirham (AED)', symbol: 'AED' },
+  { code: 'SGD', label: 'Singapore Dollar (SGD)', symbol: 'SGD' },
+  { code: 'AUD', label: 'Australian Dollar (AUD)', symbol: 'AUD' },
+  { code: 'CAD', label: 'Canadian Dollar (CAD)', symbol: 'CAD' },
+  { code: 'JPY', label: 'Japanese Yen (JPY)', symbol: 'JPY' },
+  { code: 'CHF', label: 'Swiss Franc (CHF)', symbol: 'CHF' },
+  { code: 'SAR', label: 'Saudi Riyal (SAR)', symbol: 'SAR' },
+];
+
+// True for any non-INR currency (i.e. an export invoice — zero-rated, EX- number).
+export const isExportCurrency = (code?: string | null): boolean =>
+  !!code && code.toUpperCase() !== 'INR';
+
+export const currencySymbol = (code?: string | null): string =>
+  CURRENCIES.find((c) => c.code === (code || 'INR'))?.symbol || (code || 'Rs.');
+
+// INR value of an amount, given the item's currency and stored exchange rate
+// (INR per 1 unit). Used for dashboard/GST — never printed on the invoice.
+export const inrValue = (
+  amount: number,
+  currency?: string | null,
+  rate?: number | null
+): number =>
+  isExportCurrency(currency) ? Number(amount || 0) * Number(rate || 0) : Number(amount || 0);

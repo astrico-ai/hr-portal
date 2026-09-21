@@ -28,7 +28,8 @@ const COLUMNS: Record<string, string[]> = {
     'billing_frequency', 'custom_interval_days', 'line_items', 'bank_account',
     'invoice_document_url', 'po_document_url', 'proposal_document_url', 'generated_pdf_url',
     'invoice_generated', 'invoice_number_generated', 'invoice_generation_date',
-    'invoice_raised_by', 'project_manager', 'sales_manager', 'cx_manager'],
+    'invoice_raised_by', 'project_manager', 'sales_manager', 'cx_manager',
+    'currency', 'exchange_rate'],
   purchase_orders: ['id', 'project_id', 'name', 'po_number', 'po_value', 'currency',
     'po_end_date', 'po_document_url', 'created_at'],
   client_documents: ['id', 'client_id', 'type', 'file_url', 'uploaded_at'],
@@ -39,7 +40,7 @@ const NULLABLE_EMPTY: Record<string, string[]> = {
   clients: ['created_at', 'updated_at'],
   projects: ['inactive_date', 'created_at', 'mrr', 'client_id'],
   billable_items: ['invoice_date', 'start_date', 'end_date', 'payment_date', 'po_end_date',
-    'amount', 'custom_interval_days', 'project_id'],
+    'amount', 'custom_interval_days', 'project_id', 'exchange_rate'],
   purchase_orders: ['po_end_date', 'created_at', 'po_value', 'project_id'],
   client_documents: ['uploaded_at', 'client_id'],
 };
@@ -53,7 +54,7 @@ const LIST_SELECT: Record<string, string> = {
     'start_date', 'end_date', 'payment_date', 'po_number', 'po_end_date', 'billing_frequency',
     'custom_interval_days', 'line_items', 'bank_account', 'invoice_generated',
     'invoice_number_generated', 'invoice_generation_date', 'invoice_raised_by',
-    'project_manager', 'sales_manager', 'cx_manager',
+    'project_manager', 'sales_manager', 'cx_manager', 'currency', 'exchange_rate',
   ].join(','),
 };
 

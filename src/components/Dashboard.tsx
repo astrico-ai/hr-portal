@@ -40,6 +40,7 @@ import OneTimeChart from './OneTimeChart';
 import ReceivablesAging from './ReceivablesAging';
 import NextDueInvoices from './NextDueInvoices';
 import { getBillableItems, getClients, getProjects } from '../lib/storage';
+import { isExportCurrency, inrValue } from '../lib/invoiceConfig';
 import { useAuth } from '../contexts/AuthContext';
 import { getFinancialYearDates, getCurrentQuarter, getLastSixMonths, formatCurrency } from '../utils/dateUtils';
 import type { BillableItem, Client, Project } from '../types';
@@ -421,11 +422,19 @@ const Dashboard = () => {
 
   const loadData = async () => {
     try {
-      const [items, clientsList, projectsList] = await Promise.all([
+      const [rawItems, clientsList, projectsList] = await Promise.all([
         getBillableItems(),
         getClients(),
         getProjects()
       ]);
+      // Convert foreign-currency (export) invoices to INR for all dashboard
+      // calculations — "show the actual numbers". The original foreign amount is
+      // kept in amount_orig so invoice creation (Next Due) retains the currency.
+      const items = rawItems.map((it) =>
+        isExportCurrency(it.currency)
+          ? { ...it, amount: inrValue(it.amount, it.currency, it.exchange_rate), amount_orig: it.amount }
+          : it
+      );
       setBillableItems(items);
       setClients(clientsList);
       
