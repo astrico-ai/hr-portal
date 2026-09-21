@@ -1060,7 +1060,10 @@ const ProjectDetails: React.FC = () => {
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [client, setClient] = useState<Client | null>(null);
-  const { isAdmin } = useAuth();
+  const { isAdmin, can } = useAuth();
+  // Which tabs a user may even see (route entry allows any of these).
+  const canSeeInvoices = can('invoices.view') || can('invoices.edit') || can('invoices.create');
+  const canSeePOs = can('pos.view') || can('pos.create') || can('pos.edit');
   const [billableItems, setBillableItems] = useState<BillableItem[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
@@ -1069,6 +1072,12 @@ const ProjectDetails: React.FC = () => {
   const [cnSaving, setCnSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'billable' | 'po'>('billable');
+  // Keep the active tab on something the user is allowed to see. Runs when
+  // permissions finish loading (they arrive asynchronously).
+  useEffect(() => {
+    if (activeTab === 'billable' && !canSeeInvoices && canSeePOs) setActiveTab('po');
+    else if (activeTab === 'po' && !canSeePOs && canSeeInvoices) setActiveTab('billable');
+  }, [canSeeInvoices, canSeePOs, activeTab]);
   const [newPO, setNewPO] = useState<Partial<PurchaseOrder>>({});
   const [poFile, setPoFile] = useState<File | null>(null);
   const [editingItem, setEditingItem] = useState<BillableItem | null>(null);
@@ -1568,18 +1577,22 @@ const ProjectDetails: React.FC = () => {
 
       <div className="mt-8">
         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-          <button
-            onClick={() => setActiveTab('billable')}
-            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'billable' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-          >
-            Billable Items
-          </button>
-          <button
-            onClick={() => setActiveTab('po')}
-            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'po' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-          >
-            Purchase Orders
-          </button>
+          {canSeeInvoices && (
+            <button
+              onClick={() => setActiveTab('billable')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'billable' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+            >
+              Billable Items
+            </button>
+          )}
+          {canSeePOs && (
+            <button
+              onClick={() => setActiveTab('po')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'po' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+            >
+              Purchase Orders
+            </button>
+          )}
         </nav>
 
         {activeTab === 'billable' ? (
@@ -1607,15 +1620,17 @@ const ProjectDetails: React.FC = () => {
                     ))}
                   </select>
                 </div>
-                <button
-                  onClick={() => navigate(`/invoices/project/${project.id}/items/new`)}
-                  className={`btn btn-primary ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  disabled={!client.is_active}
-                  title={client.is_active ? 'Add Item' : 'Cannot add items to inactive client projects'}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Item
-                </button>
+                {can('invoices.create') && (
+                  <button
+                    onClick={() => navigate(`/invoices/project/${project.id}/items/new`)}
+                    className={`btn btn-primary ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!client.is_active}
+                    title={client.is_active ? 'Add Item' : 'Cannot add items to inactive client projects'}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Item
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1815,21 +1830,25 @@ const ProjectDetails: React.FC = () => {
                                     <Download className="h-4 w-4" />
                                   </button>
                                 )}
-                                <button
-                                  onClick={() => client.is_active ? setEditingItem(item) : null}
-                                  className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  disabled={!client.is_active}
-                                  title={client.is_active ? 'Edit Item' : 'Cannot edit items of inactive client'}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => setDeletingItemId(item.id)}
-                                  className="text-red-600 hover:text-red-900"
-                                  title="Delete Item"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                                {can('invoices.edit') && (
+                                  <button
+                                    onClick={() => client.is_active ? setEditingItem(item) : null}
+                                    className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    disabled={!client.is_active}
+                                    title={client.is_active ? 'Edit Item' : 'Cannot edit items of inactive client'}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                )}
+                                {can('invoices.delete') && (
+                                  <button
+                                    onClick={() => setDeletingItemId(item.id)}
+                                    className="text-red-600 hover:text-red-900"
+                                    title="Delete Item"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1918,21 +1937,25 @@ const ProjectDetails: React.FC = () => {
                                     <Download className="h-4 w-4" />
                                   </button>
                                 )}
-                                <button
-                                  onClick={() => client.is_active ? setEditingItem(item) : null}
-                                  className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  disabled={!client.is_active}
-                                  title={client.is_active ? 'Edit Item' : 'Cannot edit items of inactive client'}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => setDeletingItemId(item.id)}
-                                  className="text-red-600 hover:text-red-900"
-                                  title="Delete Item"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                                {can('invoices.edit') && (
+                                  <button
+                                    onClick={() => client.is_active ? setEditingItem(item) : null}
+                                    className={`text-gray-600 hover:text-gray-900 ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    disabled={!client.is_active}
+                                    title={client.is_active ? 'Edit Item' : 'Cannot edit items of inactive client'}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                )}
+                                {can('invoices.delete') && (
+                                  <button
+                                    onClick={() => setDeletingItemId(item.id)}
+                                    className="text-red-600 hover:text-red-900"
+                                    title="Delete Item"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1944,17 +1967,19 @@ const ProjectDetails: React.FC = () => {
               ) : (
                 <div className="text-center py-8">
                   <p className="text-sm text-gray-500">No billable items yet.</p>
-                  <div className="mt-4">
-                    <button
-                      onClick={() => navigate(`/invoices/project/${project.id}/items/new`)}
-                      className={`btn btn-primary ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      disabled={!client.is_active}
-                      title={client.is_active ? 'Add Item' : 'Cannot add items to inactive client projects'}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add your first item
-                    </button>
-                  </div>
+                  {can('invoices.create') && (
+                    <div className="mt-4">
+                      <button
+                        onClick={() => navigate(`/invoices/project/${project.id}/items/new`)}
+                        className={`btn btn-primary ${!client.is_active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        disabled={!client.is_active}
+                        title={client.is_active ? 'Add Item' : 'Cannot add items to inactive client projects'}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add your first item
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1967,7 +1992,7 @@ const ProjectDetails: React.FC = () => {
                   <h2 className="text-lg font-medium text-gray-900">Purchase Orders</h2>
                   <p className="text-sm text-gray-500 mt-1">Manage and track your purchase orders</p>
                 </div>
-                {uploadStep === 'select' && (
+                {uploadStep === 'select' && can('pos.create') && (
                   <button
                     onClick={() => setUploadStep('details')}
                     className="btn btn-primary"
@@ -2160,20 +2185,24 @@ const ProjectDetails: React.FC = () => {
                                     <Download className="h-4 w-4" />
                                   </button>
                                 )}
-                                <button
-                                  onClick={() => setEditingPO(po)}
-                                  className="text-blue-600 hover:text-blue-900"
-                                  title="Edit PO"
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => setDeletingPOId(po.id)}
-                                  className="text-red-600 hover:text-red-900"
-                                  title="Delete PO"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                                {can('pos.edit') && (
+                                  <button
+                                    onClick={() => setEditingPO(po)}
+                                    className="text-blue-600 hover:text-blue-900"
+                                    title="Edit PO"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </button>
+                                )}
+                                {can('pos.delete') && (
+                                  <button
+                                    onClick={() => setDeletingPOId(po.id)}
+                                    className="text-red-600 hover:text-red-900"
+                                    title="Delete PO"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                             <div className="mt-1 grid grid-cols-3 gap-4 text-sm">
