@@ -41,7 +41,8 @@ const HRCenter: React.FC = () => {
           phone: form.phone.trim() || null,
         });
       } else {
-        await saveEmployee({ ...form, salary: 0, ifsc: '', account_number: '' } as Employee);
+        // Profile only — salary/bank are added later on the (locked) Salary page.
+        await saveEmployee({ ...form } as Employee);
       }
       setShowForm(false);
       await load();

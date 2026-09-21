@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Wallet, Download, Upload, Pencil, X, FileSpreadsheet, Lock } from 'lucide-react';
 import {
-  getEmployees, updateEmployee, updateEmployeeSalary, bulkUpdateSalaries, type Employee,
+  getEmployeesWithPay, upsertEmployeePay, updateEmployeeSalary, bulkUpdateSalaries, type Employee,
 } from '../lib/employees';
 import { downloadSalarySheet, downloadSalaryTemplate, parseSalaryTemplate } from '../lib/salarySheet';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,7 +32,7 @@ const Salary: React.FC = () => {
   const [month, setMonth] = useState(prev.getMonth());
   const [year, setYear] = useState(prev.getFullYear());
 
-  const load = async () => { setLoading(true); setEmployees(await getEmployees()); setLoading(false); };
+  const load = async () => { setLoading(true); setEmployees(await getEmployeesWithPay()); setLoading(false); };
   useEffect(() => { load(); }, []);
 
   const active = employees.filter((e) => e.is_active !== false);
@@ -57,7 +57,7 @@ const Salary: React.FC = () => {
     if (!editing) return;
     setSaving(true);
     try {
-      await updateEmployee(editing.id!, {
+      await upsertEmployeePay(editing.id!, {
         ifsc: bankForm.ifsc.trim().toUpperCase() || null,
         account_number: bankForm.account_number.trim() || null,
         salary: Number(bankForm.salary) || 0,
