@@ -149,6 +149,8 @@ const InvoiceList = () => {
         ...item,
         invoice_number: invoiceNo,
         invoice_date: approvalDate,
+        // Freeze the signing date at approval; never overwrite if already set.
+        invoice_generation_date: item.invoice_generation_date || approvalDate,
         status: 'APPROVED',
         bank_account: bankId,
       };

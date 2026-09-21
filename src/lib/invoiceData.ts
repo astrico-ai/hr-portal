@@ -158,13 +158,12 @@ export const buildInvoiceData = (
   const total = Math.round(raw);
   const roundOff = round2(total - raw);
 
-  // Signature caption date+time — the moment the PDF is generated/signed (today),
-  // e.g. "2026.08.04 17:08:10".
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const now = new Date();
-  const datePart = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`;
-  const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  const signedOn = `${datePart} ${timePart}`;
+  // Signature date = the date the invoice was signed/generated, captured ONCE
+  // (invoice_generation_date) and frozen against later edits; falls back to the
+  // invoice's own date for older invoices. Never the download moment, so
+  // re-downloading or editing an invoice can't change or future-date the signature.
+  const signedSource = String(item.invoice_generation_date || item.invoice_date || '');
+  const signedOn = signedSource.slice(0, 10).replace(/-/g, '.'); // YYYY.MM.DD
 
   return {
     invoiceNo,

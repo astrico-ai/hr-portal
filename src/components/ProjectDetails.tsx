@@ -1099,7 +1099,19 @@ const ProjectDetails: React.FC = () => {
       return;
     }
     try {
-      const data = buildInvoiceData(item, project, client, bank, item.invoice_number);
+      // Freeze the signing date the first time this invoice is generated, so it
+      // never changes on later edits / re-downloads.
+      let signedItem = item;
+      if (!item.invoice_generation_date) {
+        signedItem = { ...item, invoice_generation_date: item.invoice_date || new Date().toISOString().slice(0, 10) };
+        try {
+          await updateBillableItem(item.id, signedItem);
+          setBillableItems(prev => prev.map(i => (i.id === item.id ? signedItem : i)));
+        } catch (e) {
+          console.error('Could not persist signing date:', e);
+        }
+      }
+      const data = buildInvoiceData(signedItem, project, client, bank, item.invoice_number);
       const blob = await pdf(<InvoiceDocument data={data} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
