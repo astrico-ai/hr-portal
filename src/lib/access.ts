@@ -6,6 +6,9 @@ export interface AppUser {
   is_active?: boolean;
   is_admin?: boolean;
   permissions?: string[];
+  // Projects this user may access (row-level scope). Empty = sees nothing
+  // (admins ignore this and see everything).
+  project_ids?: number[];
   created_at?: string;
 }
 
@@ -29,6 +32,19 @@ export const addAppUser = async (email: string, name: string): Promise<void> => 
 
 export const updateAppUserPermissions = async (email: string, permissions: string[]): Promise<void> => {
   const { error } = await supabase.from('app_users').update({ permissions }).eq('email', email.toLowerCase());
+  if (error) throw error;
+};
+
+// Save a user's capabilities and their project scope together.
+export const updateAppUserAccess = async (
+  email: string,
+  permissions: string[],
+  project_ids: number[]
+): Promise<void> => {
+  const { error } = await supabase
+    .from('app_users')
+    .update({ permissions, project_ids })
+    .eq('email', email.toLowerCase());
   if (error) throw error;
 };
 

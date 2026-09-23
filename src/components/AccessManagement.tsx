@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, UserPlus, Trash2, X, Check, Pencil } from 'lucide-react';
 import {
-  getAppUsers, addAppUser, updateAppUserPermissions, setAppUserActive, deleteAppUser, type AppUser,
+  getAppUsers, addAppUser, updateAppUserAccess, setAppUserActive, deleteAppUser, type AppUser,
 } from '../lib/access';
 import { CAPABILITY_GROUPS, ALL_CAPS } from '../lib/permissions';
+import { getProjects } from '../lib/storage';
+import { getClients } from '../lib/clients';
+import type { Project, Client } from '../types';
 
 const AccessManagement: React.FC = () => {
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -14,9 +17,36 @@ const AccessManagement: React.FC = () => {
 
   const [editing, setEditing] = useState<AppUser | null>(null);
   const [draftPerms, setDraftPerms] = useState<Set<string>>(new Set());
+  const [draftProjects, setDraftProjects] = useState<Set<number>>(new Set());
 
-  const load = async () => { setLoading(true); setUsers(await getAppUsers()); setLoading(false); };
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [projSearch, setProjSearch] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    const [u, p, c] = await Promise.all([getAppUsers(), getProjects(), getClients()]);
+    setUsers(u); setProjects(p); setClients(c);
+    setLoading(false);
+  };
   useEffect(() => { load(); }, []);
+
+  // Projects grouped under their client, for the scope picker.
+  const clientName = useMemo(() => {
+    const m = new Map(clients.map((c) => [c.id, c.legal_name]));
+    return (id: number) => m.get(id) || '—';
+  }, [clients]);
+  const groupedProjects = useMemo(() => {
+    const q = projSearch.trim().toLowerCase();
+    const groups = new Map<number, { client: string; projects: Project[] }>();
+    for (const p of projects) {
+      const cn = clientName(p.client_id);
+      if (q && !p.name.toLowerCase().includes(q) && !cn.toLowerCase().includes(q)) continue;
+      if (!groups.has(p.client_id)) groups.set(p.client_id, { client: cn, projects: [] });
+      groups.get(p.client_id)!.projects.push(p);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.client.localeCompare(b.client));
+  }, [projects, clientName, projSearch]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,18 +63,34 @@ const AccessManagement: React.FC = () => {
     } finally { setSaving(false); }
   };
 
-  const openEdit = (u: AppUser) => { setEditing(u); setDraftPerms(new Set(u.permissions || [])); };
+  const openEdit = (u: AppUser) => {
+    setEditing(u);
+    setDraftPerms(new Set(u.permissions || []));
+    setDraftProjects(new Set((u.project_ids || []).map(Number)));
+    setProjSearch('');
+  };
   const toggleCap = (key: string) => {
     setDraftPerms((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   };
   const toggleGroup = (keys: string[], on: boolean) => {
     setDraftPerms((prev) => { const n = new Set(prev); keys.forEach((k) => (on ? n.add(k) : n.delete(k))); return n; });
   };
+  const toggleProject = (id: number) => {
+    setDraftProjects((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+  const toggleProjectGroup = (ids: number[], on: boolean) => {
+    setDraftProjects((prev) => { const n = new Set(prev); ids.forEach((i) => (on ? n.add(i) : n.delete(i))); return n; });
+  };
   const savePerms = async () => {
     if (!editing) return;
     setSaving(true);
     try {
-      await updateAppUserPermissions(editing.email, Array.from(draftPerms).filter((k) => ALL_CAPS.includes(k)));
+      const validIds = new Set(projects.map((p) => p.id));
+      await updateAppUserAccess(
+        editing.email,
+        Array.from(draftPerms).filter((k) => ALL_CAPS.includes(k)),
+        Array.from(draftProjects).filter((id) => validIds.has(id)),
+      );
       setEditing(null);
       await load();
     } catch (err: any) {
@@ -100,7 +146,13 @@ const AccessManagement: React.FC = () => {
                           <ShieldCheck className="mr-1 h-3 w-3" /> Admin · full access
                         </span>
                       ) : (
-                        <span className="text-sm text-gray-500">{count} {count === 1 ? 'permission' : 'permissions'}</span>
+                        <span className="text-sm text-gray-500">
+                          {count} {count === 1 ? 'permission' : 'permissions'}
+                          {' · '}
+                          {(u.project_ids?.length || 0) === 0
+                            ? <span className="text-amber-600">no projects</span>
+                            : `${u.project_ids!.length} project${u.project_ids!.length === 1 ? '' : 's'}`}
+                        </span>
                       )}
                     </td>
                     <td className="px-3 py-3 text-center">
@@ -137,7 +189,8 @@ const AccessManagement: React.FC = () => {
 
       <p className="mt-4 text-xs text-gray-400">
         Only <span className="font-medium text-gray-600">@astrico.ai</span> addresses can be added. Invoice approval
-        &amp; bank selection are reserved for the admin and can't be granted.
+        &amp; bank selection are reserved for the admin and can't be granted. A non-admin user sees data
+        <span className="font-medium text-gray-600"> only for the projects assigned to them</span> — with none assigned, they see nothing.
       </p>
 
       {/* Add user */}
@@ -181,6 +234,59 @@ const AccessManagement: React.FC = () => {
               <button onClick={() => setEditing(null)} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
             </div>
             <div className="flex-1 space-y-5 overflow-y-auto px-6 py-4">
+              {/* Project scope — which projects this user can see at all */}
+              <div className="rounded-xl border border-gray-200 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900">Project access</h4>
+                    <p className="text-xs text-gray-400">
+                      {draftProjects.size === 0
+                        ? 'No projects selected — this user will see nothing.'
+                        : `${draftProjects.size} project${draftProjects.size === 1 ? '' : 's'} selected.`}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-400">{projects.length} total</span>
+                </div>
+                <input
+                  className="form-input mb-2 h-8 text-sm"
+                  placeholder="Search projects or clients…"
+                  value={projSearch}
+                  onChange={(e) => setProjSearch(e.target.value)}
+                />
+                <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                  {groupedProjects.length === 0 ? (
+                    <p className="py-2 text-center text-xs text-gray-400">No matching projects.</p>
+                  ) : groupedProjects.map((g) => {
+                    const ids = g.projects.map((p) => p.id);
+                    const allOn = ids.every((i) => draftProjects.has(i));
+                    return (
+                      <div key={g.client}>
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">{g.client}</span>
+                          <button onClick={() => toggleProjectGroup(ids, !allOn)} className="text-xs font-medium text-primary-600 hover:text-primary-700">
+                            {allOn ? 'Clear' : 'All'}
+                          </button>
+                        </div>
+                        <div className="space-y-1">
+                          {g.projects.map((p) => {
+                            const on = draftProjects.has(p.id);
+                            return (
+                              <button key={p.id} onClick={() => toggleProject(p.id)}
+                                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1 text-left hover:bg-gray-50">
+                                <span className={`flex h-4 w-4 flex-none items-center justify-center rounded border ${on ? 'border-primary-600 bg-primary-600 text-white' : 'border-gray-300'}`}>
+                                  {on && <Check className="h-3 w-3" strokeWidth={3} />}
+                                </span>
+                                <span className="text-sm text-gray-700">{p.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {CAPABILITY_GROUPS.map((g) => {
                 const keys = g.caps.map((c) => c.key);
                 const allOn = keys.every((k) => draftPerms.has(k));
