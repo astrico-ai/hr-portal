@@ -42,9 +42,10 @@ export const getEmployeesWithPay = async (): Promise<Employee[]> => {
     .from('employee_pay')
     .select('employee_id, salary, ifsc, account_number');
   if (error) {
-    // No access (or table missing) → just return profiles with no pay.
-    console.warn('Could not load pay (no access?):', error.message);
-    return profiles;
+    // FAIL LOUD. A DB error here (table missing, connectivity, permission) must
+    // NOT be swallowed into zero salaries — a page of 0s looks like real data
+    // and could be sent to the bank. Surface it so the UI blocks everything.
+    throw new Error(`Could not load salary data: ${error.message}`);
   }
   const payById = new Map((pay ?? []).map((p: any) => [p.employee_id, p]));
   return profiles.map((e) => {

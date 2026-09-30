@@ -25,6 +25,7 @@ const Salary: React.FC = () => {
   const [editing, setEditing] = useState<Employee | null>(null);
   const [bankForm, setBankForm] = useState({ ifsc: '', account_number: '', salary: '' });
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const now = new Date();
@@ -32,7 +33,18 @@ const Salary: React.FC = () => {
   const [month, setMonth] = useState(prev.getMonth());
   const [year, setYear] = useState(prev.getFullYear());
 
-  const load = async () => { setLoading(true); setEmployees(await getEmployeesWithPay()); setLoading(false); };
+  const load = async () => {
+    setLoading(true);
+    try {
+      setEmployees(await getEmployeesWithPay());
+      setLoadError(null);
+    } catch (err: any) {
+      setEmployees([]);
+      setLoadError(err?.message || 'Failed to load salary data.');
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => { load(); }, []);
 
   const active = employees.filter((e) => e.is_active !== false);
@@ -69,7 +81,28 @@ const Salary: React.FC = () => {
   };
 
   const handleDownloadSheet = () => {
+    if (loadError) { alert('Salary data failed to load — the sheet is not safe to generate. Reload the page first.'); return; }
     if (active.length === 0) { alert('No active employees to pay.'); return; }
+    // Guard: never let a sheet with zero salaries or missing bank details reach
+    // the bank silently. List the problems and require explicit confirmation.
+    const problems = active
+      .filter((e) => !(Number(e.salary) > 0) || !(e.ifsc || '').trim() || !(e.account_number || '').trim())
+      .map((e) => {
+        const missing = [
+          !(Number(e.salary) > 0) ? 'salary' : '',
+          !(e.ifsc || '').trim() ? 'IFSC' : '',
+          !(e.account_number || '').trim() ? 'account no.' : '',
+        ].filter(Boolean).join(', ');
+        return `• ${e.name} — missing ${missing}`;
+      });
+    if (problems.length) {
+      alert(
+        `Cannot generate the sheet — ${problems.length} active employee(s) have missing pay details:\n\n` +
+        problems.join('\n') +
+        `\n\nFix these on this page first. This guard prevents an incorrect sheet from going to the bank.`
+      );
+      return;
+    }
     downloadSalarySheet(employees, month, year);
   };
 
@@ -104,6 +137,14 @@ const Salary: React.FC = () => {
           <Lock className="h-4 w-4" /> Lock
         </button>
       </div>
+
+      {loadError && (
+        <div className="mb-6 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3">
+          <p className="text-sm font-semibold text-red-800">Salary data could not be loaded — do not use any figures on this page.</p>
+          <p className="mt-1 text-xs text-red-700">{loadError}</p>
+          <button onClick={load} className="btn btn-secondary btn-sm mt-2">Retry</button>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 mb-6">
         {/* Bank salary sheet */}
