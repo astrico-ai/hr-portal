@@ -1044,6 +1044,7 @@ const EditPOModal: React.FC<EditPOModalProps> = ({ po, isOpen, onClose, onSave }
           </button>
           <button
             type="submit"
+            onClick={handleSubmit}
             disabled={loading}
             className="btn btn-primary"
           >
