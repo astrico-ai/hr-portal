@@ -91,7 +91,7 @@ const InvoiceList = () => {
         const client = clientsData.find(c => c.id === project.client_id)!;
         const projectItems = itemsData.filter(item => item.project_id === project.id);
         // Convert foreign-currency invoices to INR so the group total is meaningful.
-        const totalAmount = projectItems.reduce((sum, item) => sum + inrValue(item.amount, item.currency, item.exchange_rate), 0);
+        const totalAmount = projectItems.reduce((sum, item) => sum + inrValue(item.amount, item.currency, item.exchange_rate, item.inr_value), 0);
 
         return {
           project,
@@ -208,8 +208,8 @@ const InvoiceList = () => {
   };
 
   // Calculate total amounts (foreign-currency invoices converted to INR).
-  const totalPendingAmount = pendingInvoices.reduce((sum, { item }) => sum + inrValue(item.amount, item.currency, item.exchange_rate), 0);
-  const totalApprovalAmount = approvalItems.reduce((sum, item) => sum + inrValue(item.amount, item.currency, item.exchange_rate), 0);
+  const totalPendingAmount = pendingInvoices.reduce((sum, { item }) => sum + inrValue(item.amount, item.currency, item.exchange_rate, item.inr_value), 0);
+  const totalApprovalAmount = approvalItems.reduce((sum, item) => sum + inrValue(item.amount, item.currency, item.exchange_rate, item.inr_value), 0);
 
   if (loading) {
     return (

@@ -432,7 +432,7 @@ const Dashboard = () => {
       // kept in amount_orig so invoice creation (Next Due) retains the currency.
       const items = rawItems.map((it) =>
         isExportCurrency(it.currency)
-          ? { ...it, amount: inrValue(it.amount, it.currency, it.exchange_rate), amount_orig: it.amount }
+          ? { ...it, amount: inrValue(it.amount, it.currency, it.exchange_rate, it.inr_value), amount_orig: it.amount }
           : it
       );
       setBillableItems(items);

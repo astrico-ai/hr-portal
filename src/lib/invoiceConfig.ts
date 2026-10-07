@@ -86,11 +86,16 @@ export const isExportCurrency = (code?: string | null): boolean =>
 export const currencySymbol = (code?: string | null): string =>
   CURRENCIES.find((c) => c.code === (code || 'INR'))?.symbol || (code || 'Rs.');
 
-// INR value of an amount, given the item's currency and stored exchange rate
-// (INR per 1 unit). Used for dashboard/GST — never printed on the invoice.
+// INR value of a foreign-currency amount, for dashboard/GST (never printed).
+// Prefers the hand-entered inr_value; falls back to amount × exchange_rate for
+// older records that used the rate approach. INR invoices just return amount.
 export const inrValue = (
   amount: number,
   currency?: string | null,
-  rate?: number | null
-): number =>
-  isExportCurrency(currency) ? Number(amount || 0) * Number(rate || 0) : Number(amount || 0);
+  rate?: number | null,
+  inr?: number | null
+): number => {
+  if (!isExportCurrency(currency)) return Number(amount || 0);
+  if (inr !== undefined && inr !== null && !isNaN(Number(inr))) return Number(inr);
+  return Number(amount || 0) * Number(rate || 0);
+};

@@ -101,7 +101,7 @@ const NextDueInvoices: React.FC<NextDueInvoicesProps> = ({ projects, clients, bi
           custom_interval_days: latest.custom_interval_days ?? null,
           amount: latest.amount_orig ?? latest.amount,
           currency: latest.currency ?? 'INR',
-          exchange_rate: latest.exchange_rate ?? null,
+          inr_value: latest.inr_value ?? null,
           po_number: latest.po_number,
           start_date: toYMD(nextStart),
           end_date: toYMD(nextEnd),

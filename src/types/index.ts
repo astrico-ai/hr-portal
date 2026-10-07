@@ -111,10 +111,13 @@ export interface BillableItem {
   invoice_number_generated?: string | null;
   invoice_generation_date?: string | null;
   generated_pdf_url?: string | null;
-  // Foreign-currency (export) invoices. currency defaults to INR; exchange_rate
-  // is INR per 1 unit of currency, used for dashboard/GST conversion (not printed).
+  // Foreign-currency (export) invoices. currency defaults to INR. For foreign
+  // invoices the user enters inr_value directly (the INR equivalent used for
+  // dashboard/GST — never printed on the invoice). exchange_rate is the older
+  // derive-from-rate approach, kept only as a fallback for pre-existing records.
   currency?: string | null;
   exchange_rate?: number | null;
+  inr_value?: number | null;
   // Transient (not persisted): when the dashboard normalizes `amount` to INR,
   // it stashes the original foreign-currency amount here so invoice creation
   // (Next Due Invoices prefill) can still recover the currency value.
@@ -146,6 +149,7 @@ export interface BillableItemFormData {
   invoice_raised_by: string | null;
   currency?: string | null;
   exchange_rate?: number | null;
+  inr_value?: number | null;
 }
 
 export interface PurchaseOrder {

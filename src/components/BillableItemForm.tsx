@@ -45,6 +45,7 @@ const BillableItemForm = () => {
     invoice_raised_by: null,
     currency: 'INR',
     exchange_rate: null,
+    inr_value: null,
     ...(prefill || {}),
   });
   const isForeign = isExportCurrency(formData.currency);
@@ -131,8 +132,8 @@ const BillableItemForm = () => {
         setLoading(false);
         return;
       }
-      if (isForeign && !(Number(formData.exchange_rate) > 0)) {
-        alert('Please enter the exchange rate (INR per 1 unit) for this foreign-currency invoice.');
+      if (isForeign && !(Number(formData.inr_value) > 0)) {
+        alert('Please enter the INR value (for dashboard) of this foreign-currency invoice.');
         setLoading(false);
         return;
       }
@@ -150,8 +151,9 @@ const BillableItemForm = () => {
         // Don't include a PO document since we're using an existing PO
         po_document: null,
         currency: formData.currency || 'INR',
-        // Exchange rate only applies to foreign currency; clear it for INR.
-        exchange_rate: isForeign ? Number(formData.exchange_rate) : null,
+        // INR value only applies to foreign currency; clear it for INR invoices.
+        inr_value: isForeign ? Number(formData.inr_value) : null,
+        exchange_rate: null,
       };
 
       await saveBillableItem(submitData);
@@ -275,7 +277,7 @@ const BillableItemForm = () => {
                         po_end_date: selectedPO?.po_end_date || null,
                         po_document_url: selectedPO?.po_document_url || null,
                         currency: poCurrency,
-                        exchange_rate: isExportCurrency(poCurrency) ? prev.exchange_rate : null,
+                        inr_value: isExportCurrency(poCurrency) ? prev.inr_value : null,
                       };
                     });
                   }}
@@ -303,7 +305,7 @@ const BillableItemForm = () => {
                     onChange={(e) => setFormData(prev => ({
                       ...prev,
                       currency: e.target.value,
-                      exchange_rate: isExportCurrency(e.target.value) ? prev.exchange_rate : null,
+                      inr_value: isExportCurrency(e.target.value) ? prev.inr_value : null,
                     }))}
                     disabled={poLocksCurrency}
                     className="form-select mt-1 w-full disabled:bg-gray-50 disabled:text-gray-500"
@@ -322,24 +324,24 @@ const BillableItemForm = () => {
                 </div>
                 {isForeign && (
                   <div>
-                    <label htmlFor="exchange_rate" className="block text-sm font-medium text-gray-700">
-                      Exchange Rate (INR per 1 {formData.currency}) <span className="text-red-500">*</span>
+                    <label htmlFor="inr_value" className="block text-sm font-medium text-gray-700">
+                      INR value (for dashboard) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
-                      id="exchange_rate"
-                      step="0.0001"
+                      id="inr_value"
+                      step="0.01"
                       min="0"
-                      value={formData.exchange_rate ?? ''}
+                      value={formData.inr_value ?? ''}
                       onChange={(e) => setFormData(prev => ({
                         ...prev,
-                        exchange_rate: e.target.value ? parseFloat(e.target.value) : null,
+                        inr_value: e.target.value ? parseFloat(e.target.value) : null,
                       }))}
                       className="form-input mt-1 w-full"
-                      placeholder="e.g. 83.25"
+                      placeholder="e.g. 56600"
                     />
                     <p className="mt-1 text-xs text-gray-500">
-                      Used only for dashboard/GST INR conversion — not shown on the invoice.
+                      The ₹ equivalent of this invoice — used for dashboard/GST only, never shown on the invoice.
                     </p>
                   </div>
                 )}

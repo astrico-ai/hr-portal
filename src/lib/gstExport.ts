@@ -84,9 +84,10 @@ export const buildGstRows = (
       // their taxable value is reported in INR (foreign × exchange rate).
       const foreign = isExportCurrency(it.currency);
       const currency = (it.currency || 'INR').toUpperCase();
-      const fxRate = foreign ? Number(it.exchange_rate) || 0 : 1;
       const foreignValue = it.amount;
-      const taxable = inrValue(it.amount, it.currency, it.exchange_rate);
+      const taxable = inrValue(it.amount, it.currency, it.exchange_rate, it.inr_value);
+      // Effective INR-per-unit for the column (derived from the entered INR value).
+      const fxRate = foreign ? (foreignValue ? round2(taxable / foreignValue) : 0) : 1;
       const gstin = gstinOf(client);
       const t = taxFor(foreign ? '' : gstin, taxable);
       return {
@@ -109,9 +110,14 @@ export const buildGstRows = (
       // Credit note inherits its invoice's currency; amount is in that currency.
       const foreign = isExportCurrency(invoice?.currency);
       const currency = (invoice?.currency || 'INR').toUpperCase();
-      const fxRate = foreign ? Number(invoice?.exchange_rate) || 0 : 1;
       const foreignValue = Math.abs(Number(cn.amount) || 0);
-      const taxable = inrValue(foreignValue, invoice?.currency, invoice?.exchange_rate);
+      // INR-per-unit implied by the invoice's entered INR value (fallback: rate).
+      const invAmt = Number(invoice?.amount) || 0;
+      const effRate = foreign
+        ? (invoice?.inr_value != null && invAmt ? Number(invoice.inr_value) / invAmt : Number(invoice?.exchange_rate) || 0)
+        : 1;
+      const fxRate = round2(effRate);
+      const taxable = foreign ? round2(foreignValue * effRate) : foreignValue;
       const gstin = gstinOf(client);
       const t = taxFor(foreign ? '' : gstin, taxable);
       return {

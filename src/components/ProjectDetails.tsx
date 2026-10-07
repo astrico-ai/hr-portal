@@ -344,8 +344,8 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
     setLoading(true);
     try {
       // Foreign-currency invoices need an exchange rate for INR conversion.
-      if (isExportCurrency(formData.currency) && !(Number(formData.exchange_rate) > 0)) {
-        alert('Please enter the exchange rate (INR per 1 unit) for this foreign-currency invoice.');
+      if (isExportCurrency(formData.currency) && !(Number(formData.inr_value) > 0)) {
+        alert('Please enter the INR value (for dashboard) of this foreign-currency invoice.');
         setLoading(false);
         return;
       }
@@ -446,7 +446,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
                     currency: e.target.value,
-                    exchange_rate: isExportCurrency(e.target.value) ? prev.exchange_rate : null,
+                    inr_value: isExportCurrency(e.target.value) ? prev.inr_value : null,
                   }))}
                   className="form-select mt-1 w-full"
                 >
@@ -460,23 +460,23 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
               </div>
               {isExportCurrency(formData.currency) && (
                 <div>
-                  <label htmlFor="exchange_rate" className="block text-sm font-medium text-gray-700">
-                    Exchange Rate (INR per 1 {formData.currency}) <span className="text-red-500">*</span>
+                  <label htmlFor="inr_value" className="block text-sm font-medium text-gray-700">
+                    INR value (for dashboard) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
-                    id="exchange_rate"
-                    step="0.0001"
+                    id="inr_value"
+                    step="0.01"
                     min="0"
-                    value={formData.exchange_rate ?? ''}
+                    value={formData.inr_value ?? ''}
                     onChange={(e) => setFormData(prev => ({
                       ...prev,
-                      exchange_rate: e.target.value ? parseFloat(e.target.value) : null,
+                      inr_value: e.target.value ? parseFloat(e.target.value) : null,
                     }))}
                     className="form-input mt-1 w-full"
-                    placeholder="e.g. 83.25"
+                    placeholder="e.g. 56600"
                   />
-                  <p className="mt-1 text-xs text-gray-500">Dashboard/GST INR conversion only — not shown on the invoice.</p>
+                  <p className="mt-1 text-xs text-gray-500">₹ equivalent of this invoice — dashboard/GST only, never shown on the invoice.</p>
                 </div>
               )}
             </div>
@@ -548,7 +548,7 @@ const EditItemModal: React.FC<EditItemModalProps> = ({
                         po_end_date: selectedPO?.po_end_date || null,
                         po_document_url: selectedPO?.po_document_url || null, // Link PO document
                         currency: poCurrency,
-                        exchange_rate: isExportCurrency(poCurrency) ? prev.exchange_rate : null,
+                        inr_value: isExportCurrency(poCurrency) ? prev.inr_value : null,
                       };
                     });
                   }}
