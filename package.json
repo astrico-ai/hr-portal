@@ -2,6 +2,10 @@
   "name": "hr-portal",
   "version": "0.1.0",
   "private": true,
+  "comment:overrides": "node-forge pinned to the patched 1.4.3 (CVE-2026-119192). Transitive via webpack-dev-server>selfsigned; dev-only, not in the production build.",
+  "overrides": {
+    "node-forge": "^1.4.3"
+  },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.0",
     "@supabase/supabase-js": "^2.111.0",
